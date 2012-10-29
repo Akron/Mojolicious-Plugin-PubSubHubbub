@@ -1,0 +1,16 @@
+blib
+log
+Sandbox
+public
+todo.org
+script*
+MYMETA*
+Makefile
+pm_to_blib
+*~
+*.sqlite
+*.log
+*.db
+*.old
+.*
+!.gitignore

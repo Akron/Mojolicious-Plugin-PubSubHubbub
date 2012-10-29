@@ -1,0 +1,329 @@
+=pod
+
+=head1 NAME
+
+Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with Mojolicious
+
+
+=head1 SYNOPSIS
+
+  # Mojolicious
+  $app->plugin(PubSubHubbub => {
+    hub => 'https://hub.example.org/'
+  });
+
+  my $r = $app->routes;
+  $r->route('/:user/callback_url')->pubsub('cb')
+
+  # Mojolicious::Lite
+  plugin 'PubSubHubbub' => {
+    hub => 'https://hub.example.org'
+  };
+
+  (any '/:user/callback_url')->pubsub('cb');
+
+  # In Controllers:
+  # Publish a feed
+  $c->pubsub_publish(
+    'https://sojolicio.us/blog.atom',
+    'https://sojolicio.us/activity.atom'
+  );
+
+  # Subscribe to a feed
+  $c->pubsub_subscribe(
+    topic => 'https://sojolicio.us/feed.atom',
+    hub   => 'https://hub.sojolicio.us'
+  );
+
+  # Unsubscribe from a feed
+  $c->pubsub_unsubscribe(
+    topic => 'https://sojolicio.us/feed.atom',
+    hub   => 'https://hub.sojolicio.us'
+  );
+
+
+=head1 DESCRIPTION
+
+L<Mojolicious::Plugin::PubSubHubbub> is a plugin to publish and subscribe to
+L<PubSubHubbub 0.3|http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html> Webhooks.
+
+The plugin currently supports the publisher and subscriber part of the protocol,
+I<not> the hub part.
+
+This plugin is data store agnostic.
+Please use this plugin by applying hooks.
+
+
+=head1 METHODS
+
+=head2 C<register>
+
+  # Mojolicious
+  $app->plugin(PubSubHubbub => {
+    hub => 'https://hub.example.org/',
+    lease_seconds => 100 * 24 * 60 * 60
+  });
+
+  # Mojolicious::Lite
+  plugin 'PubSubHubbub' => {
+    hub => 'https://hub.example.org/',
+    lease_seconds => 100 * 24 * 60 * 60
+  };
+
+  # Or in your config file
+  {
+    PubSubHubbub => {
+      hub => 'https://hub.example.org/',
+      lease_seconds => 100 * 24 * 60 * 60
+    }
+  }
+
+
+Called when registering the plugin.
+Accepts the attributes mentioned as parameters.
+All parameters can be set either on registration or
+as part of the configuration file with the key C<PubSubHubbub>.
+
+
+=head1 ATTRIBUTES
+
+=head2 C<hub>
+
+  $ps->hub('http://pubsubhubbub.appspot.com/');
+  my $hub = $ps->hub;
+
+The preferred hub. Currently local hubs are not supported.
+
+=head2 C<lease_seconds>
+
+  my $seconds = $ps->lease_seconds;
+  $ps->lease_seconds(100 * 24 * 60 * 60);
+
+Seconds a subscription is valid by default before auto refresh
+is enabled.
+
+
+=head1 HELPERS
+
+=head2 C<pubsub_publish>
+
+  # In Controllers
+  $c->pubsub_publish(
+    'my_feed',                       # named route
+    '/feed.atom',                    # relative paths
+    'https://sojolicio.us/feed.atom' # absolute URIs
+  );
+
+Publish a list of feeds in terms of a notification to the hub.
+Supports named routes, relative paths and absolute URIs.
+
+=head2 C<pubsub_subscribe>
+
+  # In Controllers
+  $c->pubsub_subscribe(
+    topic => 'https://sojolicio.us/feed.atom',
+    hub   => 'https://hub.sojolicio.us' );
+    lease_seconds => 123456
+  );
+
+Subscribe to a topic.
+
+Relevant parameters are C<hub>,
+C<lease_seconds>, C<secret>, C<verify_token>, and C<callback>.
+Additional parameters are ignored but can be accessed in the hooks.
+If no C<verify_token> is given, it is automatically generated.
+If no C<callback> is given, the route callback is used.
+If no C<lease_seconds> is given, the subscription will
+not automatically terminate.
+If a C<secret> is given, it must be unique for every 'callback'
+and 'hub' combination to allow for bulk distribution.
+
+The method returns a true value on succes and a false value
+if an error occured. If called in an array context, the
+hub's response message body is returned additionally.
+
+=head2 C<pubsub_unsubscribe>
+
+  # In Controllers
+  $c->pubsub_unsubscribe(
+    topic => 'https://sojolicio.us/feed.atom',
+    hub   => 'https://hub.sojolicio.us'
+  );
+
+Unsubscribe from a topic.
+
+Relevant parameters are C<hub>, C<secret>, and C<verify_token>.
+Additional parameters are ignored but can be accessed in the hooks.
+The method returns a true value on success and a false value
+if an error occured. If called in an array context, the
+hub's response message body is returned additionally.
+
+
+=head1 HOOKS
+
+=head2 C<on_pubsub_acceptance>
+
+  $mojo->hook(
+    on_pubsub_acceptance => sub {
+      my ($c, $type,
+          $topics, $secret, $on_behalf) = @_;
+
+      @$topics = grep($_ !~ /catz/, @$topics);
+      $$secret = 'zoidberg';
+      $$on_behalf = 3;
+
+      return;
+     });
+
+This hook is released, when content arrives at the pubsub
+endpoint. The parameters include the current
+controller object, the content type, an array reference of topics,
+an empty string reference for a possible secret, and a string
+reference for the C<X-Hub-On-Behalf-Of> value, which is initially 0.
+
+This hook can be used to filter unwanted topics, to give a
+necessary secret for signed content, and information on
+the user count of the subscription to the processor.
+
+If the list is returned as an empty list, the processing will stop.
+
+If nothing in this hook happens, the complete content will be processed.
+
+=head2 C<on_pubsub_content>
+
+  $mojo->hook(
+    on_pubsub_content => sub {
+      my ($c, $type, $dom) = @_;
+
+      if ($type eq 'atom') {
+        $dom->find('entry')->each(
+          print $_->at('title')->text, "\n";
+        );
+      };
+
+      return;
+    });
+
+This hook is released, when desired (i.e., verified and filtered)
+content is delivered.
+The parameters include the current
+controller object, the content type, and the - maybe topic
+filtered - content as a L<Mojo::DOM> object.
+
+B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
+entry in the feed (either RSS or Atom) includes its topic in
+'source link[rel="self"][href]'.
+
+=head2 C<before_pubsub_subscribe>
+
+  $mojo->hook(
+    before_pubsub_subscribe => sub {
+      my ($c, $params, $post) = @_;
+
+      my $topic = $params->{topic};
+      print "Start following $topic\n";
+
+      return;
+    });
+
+This hook is released, before a subscription request is sent to a hub.
+The parameters include the current controller object,
+the parameters for subscription as a Hash reference and the C<POST>
+string as a string ref.
+This hook can be used to store subscription information and establish
+a secret value.
+
+=head2 C<after_pubsub_subscribe>
+
+  $mojo->hook(
+    after_pubsub_subscribe => sub {
+      my ($c, $params, $status, $body) = @_;
+      if ($status !~ /^2/) {
+        warn 'Error: ', $body;
+      };
+
+      return;
+    });
+
+This hook is released, after a subscription request is sent to a hub
+and the response is processed.
+The parameters include the current controller object,
+the parameters for subscription as a Hash reference, the response status,
+and the response body.
+This hook can be used to deal with errors.
+
+=head2 C<before_pubsub_unsubscribe>
+
+  $mojo->hook(
+    before_pubsub_unsubscribe => sub {
+      my ($c, $params, $post) = @_;
+
+      my $topic = $params->{topic};
+      print "Stop following $topic\n";
+
+      return;
+    });
+
+This hook is released, before an unsubscription request is sent
+to a hub.
+The parameters include the current controller object,
+the parameters for unsubscription as a Hash reference and the C<POST>
+string as a string ref.
+This hook can be used to store unsubscription information.
+
+=head2 C<after_pubsub_unsubscribe>
+
+  $mojo->hook(
+    after_pubsub_unsubscribe => sub {
+      my ($c, $params, $status, $body) = @_;
+      if ($status !~ /^2/) {
+        warn 'Error: ', $body;
+      };
+
+      return;
+    });
+
+This hook is released, after an unsubscription request is sent to a hub
+and the response is processed.
+The parameters include the current controller object,
+the parameters for unsubscription as a Hash reference, the response status,
+and the response body.
+This hook can be used to deal with errors.
+
+=head2 C<on_pubsub_verification>
+
+  $mojo->hook(
+    on_pubsub_verification => sub {
+      my ($c, $params, $ok_ref) = @_;
+
+      if ($params->{topic} =~ /catz/ &&
+          $params->{verify_token} eq 'zoidberg') {
+        $$ok_ref = 1;
+      };
+
+      return;
+    });
+
+This hook is released, when a verification is requested. The parameters
+include the current controller object, the parameters
+of the verification request as a hash reference, and a string reference
+to a false value.
+If verification is granted, this value has to be set to true.
+
+=head1 DEPENDENCIES
+
+L<Mojolicious>,
+L<Mojolicious::Plugin::Util::Endpoint>.
+
+=head1 AVAILABILITY
+
+  https://github.com/Akron/Mojolicious-Plugin-PubSubHubbub
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2011-2012, Nils Diewald.
+
+This program is free software, you can redistribute it
+and/or modify it under the same terms as Perl.
+
+=cut

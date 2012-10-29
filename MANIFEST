@@ -1,0 +1,6 @@
+lib/Mojolicious/Plugin/PubSubHubbub.pm
+t/PubSubHubbub.t
+Changes
+MANIFEST
+LICENSE
+Makefile.PL
