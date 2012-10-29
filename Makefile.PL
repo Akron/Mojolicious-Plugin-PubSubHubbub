@@ -10,6 +10,7 @@ WriteMakefile(
   AUTHOR       => 'Nils Diewald',
   PREREQ_PM => {
     'Mojolicious' => 3.43,
+    'Mojolicious::Plugin::Util::Endpoint' => 0.03,
     'Test::More' => 0
   },
   LICENSE      => 'perl',

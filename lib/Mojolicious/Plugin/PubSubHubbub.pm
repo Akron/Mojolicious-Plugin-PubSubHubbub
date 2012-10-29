@@ -597,7 +597,7 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
   (any '/:user/callback_url')->pubsub('cb');
 
   # In Controllers:
-  # Publish a feed
+  # Publish feeds
   $c->pubsub_publish(
     'https://sojolicio.us/blog.atom',
     'https://sojolicio.us/activity.atom'
