@@ -14,8 +14,8 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 #       when subscribing to html, rss without hub etc.
 #       Test with http://push-pub.appspot.com/
 
-# Default lease seconds before automatic subscription refreshing
 
+# Default lease seconds before automatic subscription refreshing
 has lease_seconds => ( 30 * 24 * 60 * 60 );
 has 'hub';
 
@@ -34,8 +34,18 @@ sub register {
     $param = { %$config_param, %$param };
   };
 
+  # Load 'endpoint' plugin
+  unless (exists $mojo->renderer->helpers->{'endpoint'}) {
+    $mojo->plugin('Util::Endpoint');
+  };
+
   # Set hub attribute
-  $plugin->hub($param->{hub}) if $param->{hub};
+  if ($param->{hub}) {
+    $plugin->hub($param->{hub});
+
+    # Establish an endpoint
+    $mojo->endpoint('pubsub-hub' => $param->{hub});
+  };
 
   # Set lease_seconds attribute
   if ($param->{lease_seconds}) {
@@ -49,13 +59,11 @@ sub register {
     pubsub => sub {
       my ($route, $param) = @_;
 
+      # Set param default to 'cb'
+      $param ||= 'cb';
+
       # 'hub' is currently not supported
       return unless $param eq 'cb';
-
-      # Load 'endpoint' plugin
-      unless (exists $mojo->renderer->helpers->{'endpoint'}) {
-	$mojo->plugin('Util::Endpoint');
-      };
 
       # Set PubSubHubbub endpoints
       $route->endpoint('pubsub-' . $param);
@@ -513,7 +521,7 @@ sub _render_success {
 
   # Set X-Hub-On-Behalf-Of header
   if ($x_hub_on_behalf_of &&
-      $x_hub_on_behalf_of =~ /^\d+$/) {
+      $x_hub_on_behalf_of =~ s/^\s*(\d+)\s*$/$1/) {
     $c->res->headers->header(
       'X-Hub-On-Behalf-Of' => $x_hub_on_behalf_of);
   };
@@ -539,7 +547,7 @@ sub _render_fail {
 # Create challenge string
 sub _challenge {
   my $chal = '';
-  for (1..$_[0] || 8) {
+  for (1 .. $_[0] || 8) {
     $chal .= $challenge_chars[ int( rand( @challenge_chars ) ) ];
   };
   return $chal;
@@ -558,7 +566,7 @@ __DATA__
   </head>
   <body>
     <h1><%= $title %></h1>
-    <%== content %>
+%= content
   </body>
 </html>
 
@@ -571,6 +579,7 @@ __DATA__
     <p>Your request was not correct.</p>
 
 __END__
+
 
 =pod
 
@@ -667,6 +676,8 @@ as part of the configuration file with the key C<PubSubHubbub>.
   my $hub = $ps->hub;
 
 The preferred hub. Currently local hubs are not supported.
+Establishes a C<pubsub-hub> L<Mojolicious::Plugin::Util::Endpoint>.
+
 
 =head2 C<lease_seconds>
 
@@ -675,6 +686,28 @@ The preferred hub. Currently local hubs are not supported.
 
 Seconds a subscription is valid by default before auto refresh
 is enabled.
+
+
+=head1 SHORTCUTS
+
+=head2 C<pubsub>
+
+  my $r = $app->routes;
+  $r->route('/:user/callback_url')->pubsub('cb')
+
+Define routes for the endpoints of your PubSubHubbub system.
+Supported parameters include:
+
+=over 2
+
+=item C<cb>
+
+Define the callback endpoint for your subscriptions.
+Establishes a C<pubsub-cb> L<Mojolicious::Plugin::Util::Endpoint>.
+
+=back
+
+B<Note:> C<hub> is currently not supported.
 
 
 =head1 HELPERS

@@ -23,7 +23,7 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
   (any '/:user/callback_url')->pubsub('cb');
 
   # In Controllers:
-  # Publish a feed
+  # Publish feeds
   $c->pubsub_publish(
     'https://sojolicio.us/blog.atom',
     'https://sojolicio.us/activity.atom'
@@ -93,6 +93,8 @@ as part of the configuration file with the key C<PubSubHubbub>.
   my $hub = $ps->hub;
 
 The preferred hub. Currently local hubs are not supported.
+Establishes a C<pubsub-hub> L<Mojolicious::Plugin::Util::Endpoint>.
+
 
 =head2 C<lease_seconds>
 
@@ -101,6 +103,28 @@ The preferred hub. Currently local hubs are not supported.
 
 Seconds a subscription is valid by default before auto refresh
 is enabled.
+
+
+=head1 SHORTCUTS
+
+=head2 C<pubsub>
+
+  my $r = $app->routes;
+  $r->route('/:user/callback_url')->pubsub('cb')
+
+Define routes for the endpoints of your PubSubHubbub system.
+Supported parameters include:
+
+=over 2
+
+=item C<cb>
+
+Define the callback endpoint for your subscriptions.
+Establishes a C<pubsub-cb> L<Mojolicious::Plugin::Util::Endpoint>.
+
+=back
+
+B<Note:> C<hub> is currently not supported.
 
 
 =head1 HELPERS
