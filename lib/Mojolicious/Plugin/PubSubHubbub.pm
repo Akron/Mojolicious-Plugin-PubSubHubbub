@@ -66,7 +66,7 @@ sub register {
       return unless $param eq 'cb';
 
       # Set PubSubHubbub endpoints
-      $route->endpoint('pubsub-' . $param);
+      $route->endpoint("pubsub-${param}");
 
       # Add 'callback' route
       if ($param eq 'cb') {
@@ -92,7 +92,7 @@ sub register {
   # Add 'subscribe' and 'unsubscribe' helper
   foreach my $action (qw(subscribe unsubscribe)) {
     $mojo->helper(
-      'pubsub_' . $action => sub {
+      "pubsub_${action}" => sub {
 	return $plugin->_change_subscription(
 	  shift,
 	  mode => $action,
@@ -170,9 +170,7 @@ sub verify {
     # Emit hook to see, if verification is granted.
     $c->app->plugins->emit_hook(
       on_pubsub_verification => (
-	$c,
-	\%param,
-	\$ok
+	$c, \%param, \$ok
       ));
 
     if ($ok) {
@@ -237,9 +235,7 @@ sub _change_subscription {
 
   $mojo->plugins->emit_hook(
     'before_pubsub_' . $mode => (
-      $c,
-      \%param,
-      \%post
+      $c, \%param, \%post
     ));
 
   # Prefix all parameters
@@ -262,11 +258,8 @@ sub _change_subscription {
   };
 
   $mojo->plugins->emit_hook(
-    'after_pubsub_'.$mode => (
-      $c,
-      \%param,
-      $res->code,
-      $res->body
+    "after_pubsub_$mode" => (
+      $c, \%param, $res->code, $res->body
     ));
 
   # is 2xx, incl. 204 aka successful and 202 aka accepted
@@ -639,7 +632,7 @@ Please use this plugin by applying hooks.
 
 =head1 METHODS
 
-=head2 C<register>
+=head2 register
 
   # Mojolicious
   $app->plugin(PubSubHubbub => {
@@ -670,16 +663,16 @@ as part of the configuration file with the key C<PubSubHubbub>.
 
 =head1 ATTRIBUTES
 
-=head2 C<hub>
+=head2 hub
 
   $ps->hub('http://pubsubhubbub.appspot.com/');
   my $hub = $ps->hub;
 
 The preferred hub. Currently local hubs are not supported.
-Establishes a C<pubsub-hub> L<Mojolicious::Plugin::Util::Endpoint>.
+Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
 
 
-=head2 C<lease_seconds>
+=head2 lease_seconds
 
   my $seconds = $ps->lease_seconds;
   $ps->lease_seconds(100 * 24 * 60 * 60);
@@ -690,7 +683,7 @@ is enabled.
 
 =head1 SHORTCUTS
 
-=head2 C<pubsub>
+=head2 pubsub
 
   my $r = $app->routes;
   $r->route('/:user/callback_url')->pubsub('cb')
@@ -703,7 +696,7 @@ Supported parameters include:
 =item C<cb>
 
 Define the callback endpoint for your subscriptions.
-Establishes a C<pubsub-cb> L<Mojolicious::Plugin::Util::Endpoint>.
+Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-cb>.
 
 =back
 
@@ -712,7 +705,7 @@ B<Note:> C<hub> is currently not supported.
 
 =head1 HELPERS
 
-=head2 C<pubsub_publish>
+=head2 pubsub_publish
 
   # In Controllers
   $c->pubsub_publish(
@@ -724,7 +717,7 @@ B<Note:> C<hub> is currently not supported.
 Publish a list of feeds in terms of a notification to the hub.
 Supports named routes, relative paths and absolute URIs.
 
-=head2 C<pubsub_subscribe>
+=head2 pubsub_subscribe
 
   # In Controllers
   $c->pubsub_subscribe(
@@ -745,11 +738,12 @@ not automatically terminate.
 If a C<secret> is given, it must be unique for every 'callback'
 and 'hub' combination to allow for bulk distribution.
 
-The method returns a true value on succes and a false value
+The method returns a true value on success and a false value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
-=head2 C<pubsub_unsubscribe>
+
+=head2 pubsub_unsubscribe
 
   # In Controllers
   $c->pubsub_unsubscribe(
@@ -768,7 +762,7 @@ hub's response message body is returned additionally.
 
 =head1 HOOKS
 
-=head2 C<on_pubsub_acceptance>
+=head2 on_pubsub_acceptance
 
   $mojo->hook(
     on_pubsub_acceptance => sub {
@@ -796,7 +790,8 @@ If the list is returned as an empty list, the processing will stop.
 
 If nothing in this hook happens, the complete content will be processed.
 
-=head2 C<on_pubsub_content>
+
+=head2 on_pubsub_content
 
   $mojo->hook(
     on_pubsub_content => sub {
@@ -821,7 +816,8 @@ B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
 entry in the feed (either RSS or Atom) includes its topic in
 'source link[rel="self"][href]'.
 
-=head2 C<before_pubsub_subscribe>
+
+=head2 before_pubsub_subscribe
 
   $mojo->hook(
     before_pubsub_subscribe => sub {
@@ -840,7 +836,8 @@ string as a string ref.
 This hook can be used to store subscription information and establish
 a secret value.
 
-=head2 C<after_pubsub_subscribe>
+
+=head2 after_pubsub_subscribe
 
   $mojo->hook(
     after_pubsub_subscribe => sub {
@@ -859,7 +856,8 @@ the parameters for subscription as a Hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 
-=head2 C<before_pubsub_unsubscribe>
+
+=head2 before_pubsub_unsubscribe
 
   $mojo->hook(
     before_pubsub_unsubscribe => sub {
@@ -878,7 +876,8 @@ the parameters for unsubscription as a Hash reference and the C<POST>
 string as a string ref.
 This hook can be used to store unsubscription information.
 
-=head2 C<after_pubsub_unsubscribe>
+
+=head2 after_pubsub_unsubscribe
 
   $mojo->hook(
     after_pubsub_unsubscribe => sub {
@@ -897,7 +896,8 @@ the parameters for unsubscription as a Hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 
-=head2 C<on_pubsub_verification>
+
+=head2 on_pubsub_verification
 
   $mojo->hook(
     on_pubsub_verification => sub {
@@ -917,18 +917,21 @@ of the verification request as a hash reference, and a string reference
 to a false value.
 If verification is granted, this value has to be set to true.
 
+
 =head1 DEPENDENCIES
 
 L<Mojolicious>,
 L<Mojolicious::Plugin::Util::Endpoint>.
 
+
 =head1 AVAILABILITY
 
   https://github.com/Akron/Mojolicious-Plugin-PubSubHubbub
 
+
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2012, Nils Diewald.
+Copyright (C) 2011-2013, Nils Diewald.
 
 This program is free software, you can redistribute it
 and/or modify it under the same terms as Perl.
