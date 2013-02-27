@@ -1,9 +1,8 @@
 package Mojolicious::Plugin::PubSubHubbub;
 use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::UserAgent;
-use Mojo::ByteStream 'b';
 use Mojo::DOM;
-
+use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
 our $VERSION = '0.01';
 
@@ -16,7 +15,7 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
 
 # Default lease seconds before automatic subscription refreshing
-has lease_seconds => ( 30 * 24 * 60 * 60 );
+has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
 has 'hub';
 
 # Character set for challenge
@@ -66,21 +65,19 @@ sub register {
       return unless $param eq 'cb';
 
       # Set PubSubHubbub endpoints
-      $route->endpoint("pubsub-${param}");
+      $route->endpoint("pubsub-callback");
 
       # Add 'callback' route
-      if ($param eq 'cb') {
-	$route->to(
-	  cb => sub {
-	    my $c = shift;
+      $route->to(
+	cb => sub {
+	  my $c = shift;
 
-	    # Hook on verification
-	    return $plugin->verify($c) if $c->param('hub.mode');
+	  # Hook on verification
+	  return $plugin->verify($c) if $c->param('hub.mode');
 
-	    # Hook on callback
-	    return $plugin->callback($c);
-	  });
-      };
+	  # Hook on callback
+	  return $plugin->callback($c);
+	});
     });
 
   # Add 'publish' helper
@@ -195,7 +192,7 @@ sub _change_subscription {
 
   # Get callback endpoint
   # Works only if endpoints provided
-  unless ($param{callback} = $c->endpoint('pubsub-cb')) {
+  unless ($param{callback} = $c->endpoint('pubsub-callback')) {
     $c->app->log->warn('You have to specify a callback endpoint.');
   };
 
@@ -321,8 +318,9 @@ sub callback {
     ));
 
   # No topics to process
-  return _render_success( $c => $x_hub_on_behalf_of )
-    unless $topics->[0];
+  # return _render_success( $c => $x_hub_on_behalf_of )
+  return _render_success( $c => 1 )
+    unless scalar @$topics;
 
   # Todo: Async with on(finish => ..)
 
@@ -331,8 +329,13 @@ sub callback {
 
     # Unable to verify secret
     unless ( _check_signature( $c, $secret )) {
-      $mojo->log->debug('Unable to verify secret for ' . join('; ', @$topics));
-      return _render_success( $c => $x_hub_on_behalf_of );
+
+      $mojo->log->debug(
+	'Unable to verify secret for ' . join('; ', @$topics)
+      );
+
+      # return _render_success( $c => $x_hub_on_behalf_of );
+      return _render_success( $c => 1 );
     };
   };
 
@@ -345,11 +348,10 @@ sub callback {
 
   $mojo->plugins->emit_hook(
     on_pubsub_content => (
-      $c,
-      $type,
-      $dom
+      $c, $type, $dom
     ));
 
+  # Successful
   return _render_success( $c => $x_hub_on_behalf_of );
 };
 
@@ -401,6 +403,7 @@ sub _find_topics {
     @topics = @{ $links->map( sub { $_->attrs('href') } ) } if $links;
   };
 
+  # Unify list
   if (@topics > 1) {
     my %topics = map { $_ => 1 } @topics;
     @topics = keys %topics;
@@ -498,12 +501,12 @@ sub _check_signature {
   $signature =~ s/^sha1=//i;
 
   # Generate check signature
-  my $signature_check = b($req->body)->hmac_sha1_sum( $secret );
+  my $signature_check = hmac_sha1_sum $req->body->to_string, $secret;
+
+  warn $signature_check;
 
   # Return true  if signature check succeeds
-  return 1 if $signature eq $signature_check;
-
-  return;
+  return secure_compare $signature, $signature_check;
 };
 
 
@@ -589,14 +592,14 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
   });
 
   my $r = $app->routes;
-  $r->route('/:user/callback_url')->pubsub('cb')
+  $r->route('/:user/callback_url')->pubsub;
 
   # Mojolicious::Lite
   plugin 'PubSubHubbub' => {
     hub => 'https://hub.example.org'
   };
 
-  (any '/:user/callback_url')->pubsub('cb');
+  (any '/:user/callback_url')->pubsub;
 
   # In Controllers:
   # Publish feeds
@@ -621,7 +624,8 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
 =head1 DESCRIPTION
 
 L<Mojolicious::Plugin::PubSubHubbub> is a plugin to publish and subscribe to
-L<PubSubHubbub 0.3|http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html> Webhooks.
+L<PubSubHubbub 0.3|http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html>
+Webhooks.
 
 The plugin currently supports the publisher and subscriber part of the protocol,
 I<not> the hub part.
@@ -686,21 +690,11 @@ is enabled.
 =head2 pubsub
 
   my $r = $app->routes;
-  $r->route('/:user/callback_url')->pubsub('cb')
-
-Define routes for the endpoints of your PubSubHubbub system.
-Supported parameters include:
-
-=over 2
-
-=item C<cb>
+  $r->route('/:user/callback_url')->pubsub;
 
 Define the callback endpoint for your subscriptions.
-Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-cb>.
-
-=back
-
-B<Note:> C<hub> is currently not supported.
+Establishes a L<Mojolicious::Plugin::Util::Endpoint>
+called C<pubsub-callback>.
 
 
 =head1 HELPERS
@@ -738,7 +732,7 @@ not automatically terminate.
 If a C<secret> is given, it must be unique for every 'callback'
 and 'hub' combination to allow for bulk distribution.
 
-The method returns a true value on success and a false value
+The method returns a C<true> value on success and a false value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
@@ -766,8 +760,7 @@ hub's response message body is returned additionally.
 
   $mojo->hook(
     on_pubsub_acceptance => sub {
-      my ($c, $type,
-          $topics, $secret, $on_behalf) = @_;
+      my ($c, $type, $topics, $secret, $on_behalf) = @_;
 
       @$topics = grep($_ !~ /catz/, @$topics);
       $$secret = 'zoidberg';
@@ -786,7 +779,7 @@ This hook can be used to filter unwanted topics, to give a
 necessary secret for signed content, and information on
 the user count of the subscription to the processor.
 
-If the list is returned as an empty list, the processing will stop.
+If the topic list is returned as an empty list, the processing will stop.
 
 If nothing in this hook happens, the complete content will be processed.
 

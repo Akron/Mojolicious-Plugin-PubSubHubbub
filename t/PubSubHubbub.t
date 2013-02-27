@@ -126,7 +126,7 @@ my $app = $t->app;
 $app->plugin('PubSubHubbub', { hub => '/hub'});
 
 
-$app->routes->route('/push')->pubsub('cb');
+$app->routes->route('/push')->pubsub;
 
 $t->get_ok('/push')
   ->content_type_like(qr{^text/html})
