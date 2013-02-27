@@ -18,6 +18,7 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
 has 'hub';
 
+
 # Character set for challenge
 my @challenge_chars = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
 
@@ -65,7 +66,7 @@ sub register {
       return unless $param eq 'cb';
 
       # Set PubSubHubbub endpoints
-      $route->endpoint("pubsub-callback");
+      $route->endpoint('pubsub-callback');
 
       # Add 'callback' route
       $route->to(
@@ -90,10 +91,7 @@ sub register {
   foreach my $action (qw(subscribe unsubscribe)) {
     $mojo->helper(
       "pubsub_${action}" => sub {
-	return $plugin->_change_subscription(
-	  shift,
-	  mode => $action,
-	  @_);
+	$plugin->_change_subscription(shift, mode => $action, @_);
       });
   };
 };
@@ -161,22 +159,19 @@ sub verify {
 		verify
 		lease_seconds
 		verify_token/) {
-      $param{$_} = $c->param('hub.' . $_) if $c->param('hub.' . $_);
+      $param{$_} = $c->param("hub.$_") if $c->param("hub.$_");
     };
 
     # Emit hook to see, if verification is granted.
     $c->app->plugins->emit_hook(
-      on_pubsub_verification => (
-	$c, \%param, \$ok
-      ));
+      on_pubsub_verification => ($c, \%param, \$ok)
+    );
 
-    if ($ok) {
-      return $c->render(
-	'status' => 200,
-	'format' => 'text',
-	'data'   => $challenge
-      );
-    };
+    return $c->render(
+      'status' => 200,
+      'format' => 'text',
+      'data'   => $challenge
+    ) if $ok;
   };
 
   # Not found
@@ -197,17 +192,18 @@ sub _change_subscription {
   };
 
   # No topic or hub url given
-  if (!exists $param{topic} || $param{topic} !~ m{^https?://}i ||
-      !exists $param{hub}) {
+  unless (exists $param{topic} &&
+	    $param{topic} =~ m{^https?://}i &&
+	      exists $param{hub}) {
     return;
   };
 
   my $mode = $param{mode};
 
   # delete lease seconds if no integer
-  if ( exists $param{lease_seconds} &&
-	 ($mode eq 'unsubscribe' || $param{lease_seconds} !~ /^\d+$/)
-       ) {
+  if (exists $param{lease_seconds} &&
+	($mode eq 'unsubscribe' || $param{lease_seconds} !~ /^\d+$/)
+      ) {
     delete $param{lease_seconds};
   };
 
@@ -226,17 +222,16 @@ sub _change_subscription {
       $param{verify_token} :
 	($param{verify_token} = _challenge(12));
 
-  $post{verify} = $_ . 'sync' foreach ('a','');
+  $post{verify} = "${_}sync" foreach ('a','');
 
   my $mojo = $c->app;
 
   $mojo->plugins->emit_hook(
-    "before_pubsub_$mode" => (
-      $c, \%param, \%post
-    ));
+    "before_pubsub_$mode" => ($c, \%param, \%post)
+  );
 
   # Prefix all parameters
-  %post = map {'hub.' . $_ => $post{$_} } keys %post;
+  %post = map { 'hub.' . $_ => $post{$_} } keys %post;
 
   # Get user agent
   my $ua = Mojo::UserAgent->new(
@@ -319,8 +314,7 @@ sub callback {
 
   # No topics to process
   # return _render_success( $c => $x_hub_on_behalf_of )
-  return _render_success( $c => 1 )
-    unless scalar @$topics;
+  return _render_success( $c => 1 ) unless scalar @$topics;
 
   # Todo: Async with on(finish => ..)
 
@@ -375,7 +369,8 @@ sub _find_topics {
     # One feed or entry
     my $link = $dom->at(
       'feed > link[rel="self"][href],' .
-	'channel > link[rel="self"][href]');
+	'channel > link[rel="self"][href]'
+      );
 
     my $self_href;
 
@@ -427,10 +422,7 @@ sub _add_topics {
       # Sources are found
       if (my $sources = $entry->find('source')) {
 	foreach my $s (@$sources) {
-	  if ($s->namespace eq ATOM_NS) {
-	    $source = $s;
-	    last;
-	  };
+	  $source = $s and last if $s->namespace eq ATOM_NS;
 	};
       };
 
@@ -461,7 +453,8 @@ sub _filter_topics {
 
   my $links = $dom->find(
     'feed > entry > source > link[rel="self"][href],' .
-      'item  > source > link[rel="self"][href]');
+      'item  > source > link[rel="self"][href]'
+    );
 
   my %topics;
 
@@ -533,9 +526,28 @@ sub _render_success {
 
 # Render fail
 sub _render_fail {
-  return shift->render(
-    template => 'pubsub-endpoint',
-    status   => 400  # bad request
+  my $c = shift;
+
+  my $fail =<<'FAIL';
+<!doctype html>
+<html>
+  <head>
+    <title>PubSubHubbub Endpoint</title>
+  </head>
+  <body>
+    <h1>PubSubHubbub Endpoint</h1>
+    <p>
+      This is an endpoint for the
+      <a href="http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html">PubSubHubbub protocol</a>
+    </p>
+    <p>Your request was not correct.</p>
+  </body>
+</html>
+FAIL
+
+  return $c->render(
+    data   => $fail,
+    status => 400  # bad request
   );
 };
 
@@ -552,27 +564,6 @@ sub _challenge {
 
 1;
 
-
-__DATA__
-@@ layouts/pubsub.html.ep
-<!doctype html>
-<html>
-  <head>
-    <title><%= $title %></title>
-  </head>
-  <body>
-    <h1><%= $title %></h1>
-%= content
-  </body>
-</html>
-
-@@ pubsub-endpoint.html.ep
-% layout 'pubsub', title => 'PubSubHubbub Endpoint';
-    <p>
-      This is an endpoint for the
-      <a href="http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html">PubSubHubbub protocol</a>
-    </p>
-    <p>Your request was not correct.</p>
 
 __END__
 
@@ -924,7 +915,7 @@ L<Mojolicious::Plugin::Util::Endpoint>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2013, Nils Diewald.
+Copyright (C) 2011-2013, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the same terms as Perl.
