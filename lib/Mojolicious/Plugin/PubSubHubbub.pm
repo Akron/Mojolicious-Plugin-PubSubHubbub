@@ -231,7 +231,7 @@ sub _change_subscription {
   my $mojo = $c->app;
 
   $mojo->plugins->emit_hook(
-    'before_pubsub_' . $mode => (
+    "before_pubsub_$mode" => (
       $c, \%param, \%post
     ));
 
@@ -347,9 +347,8 @@ sub callback {
   };
 
   $mojo->plugins->emit_hook(
-    on_pubsub_content => (
-      $c, $type, $dom
-    ));
+    on_pubsub_content => $c, $type, $dom
+  );
 
   # Successful
   return _render_success( $c => $x_hub_on_behalf_of );
@@ -501,9 +500,7 @@ sub _check_signature {
   $signature =~ s/^sha1=//i;
 
   # Generate check signature
-  my $signature_check = hmac_sha1_sum $req->body->to_string, $secret;
-
-  warn $signature_check;
+  my $signature_check = hmac_sha1_sum $req->body, $secret;
 
   # Return true  if signature check succeeds
   return secure_compare $signature, $signature_check;
@@ -518,8 +515,11 @@ sub _render_success {
   # Set X-Hub-On-Behalf-Of header
   if ($x_hub_on_behalf_of &&
       $x_hub_on_behalf_of =~ s/^\s*(\d+)\s*$/$1/) {
+
+    # Set X-Hub-On-Behalf-Of header
     $c->res->headers->header(
-      'X-Hub-On-Behalf-Of' => $x_hub_on_behalf_of);
+      'X-Hub-On-Behalf-Of' => $x_hub_on_behalf_of
+    );
   };
 
   # Render success with no content
@@ -581,7 +581,7 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with Mojolicious
+Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
 
 
 =head1 SYNOPSIS

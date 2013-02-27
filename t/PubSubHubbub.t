@@ -83,7 +83,6 @@ ok($topics ~~ ['http://sojolicio.us/2/blog'],
 is($dom->find('item')->size, 1, 'Filtered topics in RSS 4');
 
 
-
 # find topics in atom
 $dom = $dom->parse($atom);
 $topics = Mojolicious::Plugin::PubSubHubbub::_find_topics('atom',$dom);
