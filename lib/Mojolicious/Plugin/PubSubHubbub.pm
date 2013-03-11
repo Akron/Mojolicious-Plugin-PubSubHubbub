@@ -34,8 +34,15 @@ sub register {
     $param = { %$config_param, %$param };
   };
 
+  my $helpers = $mojo->renderer->helpers;
+
+  # Load 'callback' plugin
+  unless (exists $helpers->{'callback'}) {
+    $mojo->plugin('Util::Callback');
+  };
+
   # Load 'endpoint' plugin
-  unless (exists $mojo->renderer->helpers->{'endpoint'}) {
+  unless (exists $helpers->{'endpoint'}) {
     $mojo->plugin('Util::Endpoint');
   };
 
@@ -743,7 +750,6 @@ Additional parameters are ignored but can be accessed in the hooks.
 The method returns a true value on success and a false value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
-
 
 =head1 HOOKS
 

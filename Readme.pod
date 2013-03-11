@@ -2,7 +2,7 @@
 
 =head1 NAME
 
-Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with Mojolicious
+Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
 
 
 =head1 SYNOPSIS
@@ -13,14 +13,14 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
   });
 
   my $r = $app->routes;
-  $r->route('/:user/callback_url')->pubsub('cb')
+  $r->route('/:user/callback_url')->pubsub;
 
   # Mojolicious::Lite
   plugin 'PubSubHubbub' => {
     hub => 'https://hub.example.org'
   };
 
-  (any '/:user/callback_url')->pubsub('cb');
+  (any '/:user/callback_url')->pubsub;
 
   # In Controllers:
   # Publish feeds
@@ -45,7 +45,8 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub with M
 =head1 DESCRIPTION
 
 L<Mojolicious::Plugin::PubSubHubbub> is a plugin to publish and subscribe to
-L<PubSubHubbub 0.3|http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html> Webhooks.
+L<PubSubHubbub 0.3|http://pubsubhubbub.googlecode.com/svn/trunk/pubsubhubbub-core-0.3.html>
+Webhooks.
 
 The plugin currently supports the publisher and subscriber part of the protocol,
 I<not> the hub part.
@@ -110,21 +111,11 @@ is enabled.
 =head2 pubsub
 
   my $r = $app->routes;
-  $r->route('/:user/callback_url')->pubsub('cb')
-
-Define routes for the endpoints of your PubSubHubbub system.
-Supported parameters include:
-
-=over 2
-
-=item C<cb>
+  $r->route('/:user/callback_url')->pubsub;
 
 Define the callback endpoint for your subscriptions.
-Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-cb>.
-
-=back
-
-B<Note:> C<hub> is currently not supported.
+Establishes a L<Mojolicious::Plugin::Util::Endpoint>
+called C<pubsub-callback>.
 
 
 =head1 HELPERS
@@ -162,7 +153,7 @@ not automatically terminate.
 If a C<secret> is given, it must be unique for every 'callback'
 and 'hub' combination to allow for bulk distribution.
 
-The method returns a true value on success and a false value
+The method returns a C<true> value on success and a false value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
@@ -190,8 +181,7 @@ hub's response message body is returned additionally.
 
   $mojo->hook(
     on_pubsub_acceptance => sub {
-      my ($c, $type,
-          $topics, $secret, $on_behalf) = @_;
+      my ($c, $type, $topics, $secret, $on_behalf) = @_;
 
       @$topics = grep($_ !~ /catz/, @$topics);
       $$secret = 'zoidberg';
@@ -210,7 +200,7 @@ This hook can be used to filter unwanted topics, to give a
 necessary secret for signed content, and information on
 the user count of the subscription to the processor.
 
-If the list is returned as an empty list, the processing will stop.
+If the topic list is returned as an empty list, the processing will stop.
 
 If nothing in this hook happens, the complete content will be processed.
 
@@ -355,7 +345,7 @@ L<Mojolicious::Plugin::Util::Endpoint>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2013, Nils Diewald.
+Copyright (C) 2011-2013, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the same terms as Perl.
