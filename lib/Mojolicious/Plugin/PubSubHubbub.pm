@@ -41,6 +41,9 @@ sub register {
     $mojo->plugin('Util::Callback');
   };
 
+  # Set callbacks on registration
+  $mojo->callback([qw/pubsub_accept pubsub_verify/] => $param);
+
   # Load 'endpoint' plugin
   unless (exists $helpers->{'endpoint'}) {
     $mojo->plugin('Util::Endpoint');
@@ -169,9 +172,9 @@ sub verify {
       $param{$_} = $c->param("hub.$_") if $c->param("hub.$_");
     };
 
-    # Emit hook to see, if verification is granted.
-    $c->app->plugins->emit_hook(
-      on_pubsub_verification => ($c, \%param, \$ok)
+    # Get verification callback
+    my $okay = $c->callback(
+      pubsub_verify => \%param
     );
 
     return $c->render(
@@ -229,7 +232,7 @@ sub _change_subscription {
       $param{verify_token} :
 	($param{verify_token} = _challenge(12));
 
-  $post{verify} = "${_}sync" foreach ('a','');
+  $post{verify} = "${_}sync" foreach ('a', '');
 
   my $mojo = $c->app;
 
@@ -303,21 +306,14 @@ sub callback {
   # No topics to process - but technically fine
   return _render_success($c) unless $topics->[0];
 
-  my $secret;
-  my $x_hub_on_behalf_of = 0;
-
   # Save unfiltered topics for later comparison
   my @old_topics = @$topics;
 
   # Check for secret and which topics are wanted
-  $mojo->plugins->emit_hook(
-    on_pubsub_acceptance => (
-      $c,
-      $type,
-      $topics,
-      \$secret,
-      \$x_hub_on_behalf_of
-    ));
+  ($topics, my $secret, my $x_hub_on_behalf_of) =
+    $c->callback(pubsub_accept => $type, $topics);
+
+  $x_hub_on_behalf_of ||= 1;
 
   # No topics to process
   # return _render_success( $c => $x_hub_on_behalf_of )
@@ -751,35 +747,55 @@ The method returns a true value on success and a false value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
-=head1 HOOKS
 
-=head2 on_pubsub_acceptance
+=head1 CALLBACKS
 
-  $mojo->hook(
-    on_pubsub_acceptance => sub {
-      my ($c, $type, $topics, $secret, $on_behalf) = @_;
+=head2 pubsub_accept
 
-      @$topics = grep($_ !~ /catz/, @$topics);
-      $$secret = 'zoidberg';
-      $$on_behalf = 3;
+  $mojo->callback(
+    pubsub_accept => sub {
+      my ($c, $type, $topics) = @_;
+      my @new_topics = grep($_ !~ /catz/, @$topics);
+      my $secret = 'z0idberg';
+      my $on_behalf = 3;
+      return (\@new_topics, $secret, $on_behalf);
+    });
+
+This callback is released, when content arrives at the
+pubsub endpoint. The parameters passed to the callback
+include the current controller object, the content type,
+and an array reference of topics.
+
+Expects an array reference of maybe filtered topis,
+a secret if necessary, and the value of C<X-Hub-On-Behalf-Of>.
+
+If the returned topic list is empty, the processing will stop.
+
+If the callback is not established, the complete content will be
+processed.
+
+
+=head2 pubsub_verify
+
+  $mojo->callback(
+    pubsub_verify => sub {
+      my ($c, $params) = @_;
+
+      if ($params->{topic} =~ /catz/ &&
+          $params->{verify_token} eq 'zoidberg') {
+          return 1;
+      };
 
       return;
-     });
+    });
 
-This hook is released, when content arrives at the pubsub
-endpoint. The parameters include the current
-controller object, the content type, an array reference of topics,
-an empty string reference for a possible secret, and a string
-reference for the C<X-Hub-On-Behalf-Of> value, which is initially 0.
+This callback is released, when a verification is requested. The parameters
+include the current controller object and the parameters
+of the verification request as a hash reference.
+If verification is granted, This callback should return true.
 
-This hook can be used to filter unwanted topics, to give a
-necessary secret for signed content, and information on
-the user count of the subscription to the processor.
 
-If the topic list is returned as an empty list, the processing will stop.
-
-If nothing in this hook happens, the complete content will be processed.
-
+=head1 HOOKS
 
 =head2 on_pubsub_content
 
@@ -887,31 +903,11 @@ and the response body.
 This hook can be used to deal with errors.
 
 
-=head2 on_pubsub_verification
-
-  $mojo->hook(
-    on_pubsub_verification => sub {
-      my ($c, $params, $ok_ref) = @_;
-
-      if ($params->{topic} =~ /catz/ &&
-          $params->{verify_token} eq 'zoidberg') {
-        $$ok_ref = 1;
-      };
-
-      return;
-    });
-
-This hook is released, when a verification is requested. The parameters
-include the current controller object, the parameters
-of the verification request as a hash reference, and a string reference
-to a false value.
-If verification is granted, this value has to be set to true.
-
-
 =head1 DEPENDENCIES
 
 L<Mojolicious>,
-L<Mojolicious::Plugin::Util::Endpoint>.
+L<Mojolicious::Plugin::Util::Endpoint>,
+L<Mojolicious::Plugin::Util::Callback>.
 
 
 =head1 AVAILABILITY
