@@ -11,7 +11,7 @@ BEGIN {
 };
 
 use Test::Mojo;
-use Test::More tests => 154;
+use Test::More;
 use Mojolicious::Lite;
 use Mojo::ByteStream ('b');
 use lib '../lib';
@@ -27,9 +27,10 @@ my $self_href = 'http://sojolicio.us/blog';
 my $dom = Mojo::DOM->new;
 $dom->xml(1)->parse($rss);
 
-Mojolicious::Plugin::PubSubHubbub::_add_topics('rss',
-					       $dom,
-					       $self_href);
+ok(Mojolicious::Plugin::PubSubHubbub::_add_topics(
+  'rss',
+  $dom,
+  $self_href), 'Add topics');
 
 is($dom->find('item')->size,
    $dom->find('item > source > link[rel="self"]')->size,
@@ -42,9 +43,11 @@ is($dom->find('link[rel="self"][href="http://sojolicio.us/blog"]')->size,
 
 # Add topics in atom
 $dom = $dom->parse($atom);
-Mojolicious::Plugin::PubSubHubbub::_add_topics('atom',
-					       $dom,
-					       $self_href);
+ok(Mojolicious::Plugin::PubSubHubbub::_add_topics(
+  'atom',
+  $dom,
+  $self_href), 'Add topics');
+
 is($dom->find('entry')->size,
    $dom->find('entry > source > link[rel="self"]')->size,
    'Add topics to Atom');
@@ -141,10 +144,11 @@ $t->post_ok('/push' => $rss)
 # Hooks:
 my $request_count = 1;
 
-$app->hook(
-  'on_pubsub_acceptance' => sub {
-    my ($c, $type,
-	$topics, $secret, $on_behalf) = @_;
+$app->callback(
+  pubsub_accept => sub {
+    my ($c, $type, $topics) = @_;
+
+    my ($secret, $on_behalf_of);
 
     # first request
     if ($request_count == 1) {
@@ -169,14 +173,15 @@ $app->hook(
     # Third request
     elsif ($request_count ~~ [3,4,5]) {
       @$topics = ('http://sojolicio.us/2/blog');
-      $$secret = 'zoidberg';
+      $secret = 'zoidberg';
     }
 
     # Fourth request
     elsif ($request_count == 4) {
       @$topics = ('http://sojolicio.us/2/blog');
-      $$secret = 'zoidberg';
+      $secret = 'zoidberg';
     };
+    return ($topics, $secret, $on_behalf_of);
   });
 
 $app->hook(
@@ -475,16 +480,15 @@ $t->post_form_ok('/push' => { 'hub.mode' => 'foobar',
   ->content_type_like(qr{^text/html})
   ->status_is(404);
 
-$app->hook(
-  'on_pubsub_verification' => sub {
-    my ($c, $params, $ok) = @_;
+$app->callback(
+  pubsub_verify => sub {
+    my ($c, $params) = @_;
 
     my $topic = $params->{topic};
     is($topic, 'http://sojolicio.us/blog.xml', 'Topic to verify subscription');
 
-    if ($request_count == 2) {
-      $$ok = 1;
-    };
+    return 1 if $request_count == 2;
+    return;
   });
 
 $t->post_form_ok('/push' => { 'hub.mode' => 'subscribe',
@@ -673,5 +677,7 @@ our $rdf =<< 'EORDF';
 EORDF
 
 };
+
+done_testing;
 
 __END__

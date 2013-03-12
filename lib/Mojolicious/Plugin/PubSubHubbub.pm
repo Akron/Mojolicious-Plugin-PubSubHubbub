@@ -1,11 +1,12 @@
 package Mojolicious::Plugin::PubSubHubbub;
 use Mojo::Base 'Mojolicious::Plugin';
+use strict;
+use warnings;
 use Mojo::UserAgent;
 use Mojo::DOM;
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.01';
-
+our $VERSION = '0.02';
 
 use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
@@ -160,9 +161,6 @@ sub verify {
 
     my $challenge = $c->param('hub.challenge');
 
-    # Not verified
-    my $ok = 0;
-
     my %param;
     foreach (qw/mode
 		topic
@@ -173,7 +171,7 @@ sub verify {
     };
 
     # Get verification callback
-    my $okay = $c->callback(
+    my $ok = $c->callback(
       pubsub_verify => \%param
     );
 
@@ -582,7 +580,10 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
 
   # Mojolicious
   $app->plugin(PubSubHubbub => {
-    hub => 'https://hub.example.org/'
+    hub => 'https://hub.example.org/',
+    pubsub_verify => sub {
+      return 1;
+    }
   });
 
   my $r = $app->routes;
@@ -752,12 +753,19 @@ hub's response message body is returned additionally.
 
 =head2 pubsub_accept
 
+  # Establish callback
   $mojo->callback(
     pubsub_accept => sub {
       my ($c, $type, $topics) = @_;
+
+      # Filter topics
       my @new_topics = grep($_ !~ /catz/, @$topics);
-      my $secret = 'z0idberg';
-      my $on_behalf = 3;
+
+      # Set secret
+      my $secret     = 'z0idberg';
+
+      # Set X-Hub-On-Behalf-Of value
+      my $on_behalf  = 3;
       return (\@new_topics, $secret, $on_behalf);
     });
 
@@ -766,33 +774,41 @@ pubsub endpoint. The parameters passed to the callback
 include the current controller object, the content type,
 and an array reference of topics.
 
-Expects an array reference of maybe filtered topis,
+Expects an array reference of maybe filtered topics,
 a secret if necessary, and the value of C<X-Hub-On-Behalf-Of>.
-
 If the returned topic list is empty, the processing will stop.
-
 If the callback is not established, the complete content will be
 processed.
 
+The callback can be established with the
+L<callback|Mojolicious::Plugin::Util::Callback/callback>
+helper or on registration.
 
 =head2 pubsub_verify
 
+  # Establish callback
   $mojo->callback(
     pubsub_verify => sub {
-      my ($c, $params) = @_;
+      my ($c, $param) = @_;
 
-      if ($params->{topic} =~ /catz/ &&
-          $params->{verify_token} eq 'zoidberg') {
-          return 1;
+      # Topic is valid
+      if ($param->{topic} =~ /catz/ &&
+          $param->{verify_token} eq 'zoidberg') {
+        return 1;
       };
 
+      # Not verified
       return;
     });
 
 This callback is released, when a verification is requested. The parameters
 include the current controller object and the parameters
 of the verification request as a hash reference.
-If verification is granted, This callback should return true.
+If verification is granted, this callback must return a true value.
+
+The callback can be established with the
+L<callback|Mojolicious::Plugin::Util::Callback/callback>
+helper or on registration.
 
 
 =head1 HOOKS
