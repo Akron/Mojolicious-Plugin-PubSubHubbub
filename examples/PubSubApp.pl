@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 
 # Todo: Add simple Blogging-Tool!
+# Use XML::Loy!
 
 use File::Basename 'dirname';
 use File::Spec;
@@ -13,24 +14,32 @@ use Mojolicious::Lite;
 use Mojo::ByteStream 'b';
 use Mojo::Collection 'c';
 use Mojo::Date;
-use Mojo::Log;
 use DBI;
 use DBD::SQLite;
+use XML::Loy::Date::RFC3339;
 
-our $message_log = Mojo::Log->new(
-  path  => 'incoming.log',
-  level => 'info',
-);
 
-helper dbh => sub {
-  return DBI->new( ... );
+# Maybe initialize the database
+my $file = app->home . '/pubsub.sqlite';
+sub _init_file;
+unless (-e $file) {
+  die 'Unable to init database' unless _init_db($file);
 };
 
-# Also loads callback plugin
+
+# Create database handler helper
+helper dbh => sub {
+  state $dbi = DBI->connect("dbi:SQLite:dbname=" . $file, "", "");
+};
+
+
+# Register pubSubHubbub plugin
 plugin 'PubSubHubbub';
 
+
+# Add 'acceptance' callback
 app->callback(pubsub_accept => sub {
-  my ($c, $type) = @_;
+  my ($c, $type, $topics) = @_;
 
   # create quoted topic string
   my $topic_string = join(',', map(b($_)->quote, grep { $_ } @$topics));
@@ -84,7 +93,7 @@ SELECT_TOPICS
 	next;
       };
 
-      # Secret match for bulk
+      # Secret matches for bulk
       $topics{$_->[0]} = 1;
     };
   };
@@ -93,6 +102,8 @@ SELECT_TOPICS
   return ([keys %topics], $secret);
 });
 
+
+# Add verification callback
 app->callback(pubsub_verify => sub {
   my ($c, $params) = @_;
 
@@ -105,7 +116,7 @@ app->callback(pubsub_verify => sub {
   );
 
   # No subscription of this topic found
-  return unless $row;
+  return unless $subscr;
 
   $dbh->begin_work;
 
@@ -148,6 +159,7 @@ app->callback(pubsub_verify => sub {
 });
 
 
+# How to handle the newly arrived content?
 hook on_pubsub_content => sub {
   my ($c, $type, $dom) = @_;
 
@@ -176,7 +188,7 @@ hook on_pubsub_content => sub {
 	$elem = $entry->at('author entry');
 	$info{author} = $elem->all_text || $author;
 	$info{updated} = $info{updated} ?
-	  Mojolicious::Plugin::Date::RFC3339->new( $info{updated} )->epoch
+	  XML::Loy::Date::RFC3339->new( $info{updated} )->epoch
 	      : time;
 
 	push(@feed, \%info);
@@ -208,18 +220,18 @@ hook on_pubsub_content => sub {
 	    $_ = 'content';
 	  };
 
-	  $info{$_} = $elem ? $elem->all_text || '';
+	  $info{$_} = $elem ? $elem->all_text : '';
 	};
 
 	# Set updated to epoch time
 	$info{updated} =
-	  $info{updated} ? Mojo::Date->new($info{updated})->epoch : time;
+	  $info{updated} ? Mojo::Date->new( $info{updated} )->epoch : time;
 
 	push(@feed, \%info);
       });
   };
 
-  $dbh = $c->dbh;
+  my $dbh = $c->dbh;
   my $sth = $dbh->prepare(
     'INSERT INTO Content ' .
       '(topic, author, updated, title, content) ' .
@@ -239,30 +251,51 @@ hook on_pubsub_content => sub {
   $dbh->commit;
 };
 
+
+# before_pubsub_(un)?subscribe
 sub _store_subscription {
-  my ($c, $params, $post) = @_;
+  my ($c, $param, $post) = @_;
 
   my %cond;
-  $cond{$_}  = delete $params->{$_} for (qw/topic mode/);
 
-  # Filter parameters
-  my %params = map { $_ => $params->{$_} }
-    qw(hub lease_seconds secret verify_token mode);
+  my @first  = qw(hub lease_seconds secret verify_token mode pending started);
+  my @second = qw(topic mode);
 
-Todo :::::::::::::::::::::::::::::::::::::::::::::
+  $param->{pending} = 1;
+  $param->{started} = time;
 
-  # Save new status
-  $c->oro->merge(
-    'PubSub' => {
-      %params,
-      started => time,
-      pending => 1
-    } => \%cond
-  );
+  my @values = (@{$param}{@first}, @{$param}{@second});
+
+  my $sql =
+    'UPDATE PubSub SET ' .
+      join(', ', map { $_ . ' = ?' } @first) .
+	' WHERE ' .
+	  join(' AND ', map { $_ . ' = ?' } @second);
+
+  my $dbh = $c->dbh;
+
+  my $sth = $dbh->prepare($sql);
+
+  return unless $sth;
+
+  unless ($dbh->execute(@values)) {
+    $sth = $dbh->prepare(
+      'INSERT INTO PubSub (' .
+	join(',', @first, @second) . ') VALUES (' . ('?' x 7) . ')'
+      );
+    unless ($dbh->execute(@values)) {
+      app->log->warn('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
+    };
+  };
+  return;
 };
 
+
+# Unified event for subscription and unsubscribing
 hook before_pubsub_subscribe => \&_store_subscription;
 
+
+# Unified event for subscription and unsubscribing
 hook before_pubsub_unsubscribe => \&_store_subscription;
 
 
@@ -276,6 +309,9 @@ get '/' => sub {
   my $c = shift;
   # Todo: Get all feeds I subscribed to
   # Todo: Get latest entries
+  $c->render(
+    template => 'index'
+  );
 };
 
 # Subscribe to new feed
@@ -323,34 +359,18 @@ post '/' => sub {
   return $c->redirect_to('/');
 };
 
+
 #######################
 # Initialize Database #
 #######################
-
 sub _init_db {
+  my $file = shift;
+
+  my $dbh = DBI->connect("dbi:SQLite:dbname=$file", '', '');
+
   $dbh->begin_work;
 
-  unless ($dbh->do(
-    'CREATE TABLE PubSub_content (
-       id       INTEGER PRIMARY KEY,
-       author   TEXT,
-       guid     TEXT,
-       title    TEXT,
-       updated  INTEGER,
-       content  TEXT
-     )')) {
-    $dbh->rollback and return;
-  };
-
-  # PubSub Indices
-  foreach (qw/guid updated/) {
-    unless ($dbh->do(
-      "CREATE INDEX IF NOT EXISTS pubsub_content_${_}_i on PubSub_content (${_})"
-    )) {
-      $dbh->rollback and return;
-    }
-  };
-
+  # Topic subscription
   unless ($dbh->do(
     'CREATE TABLE PubSub (
        id            INTEGER PRIMARY KEY,
@@ -367,13 +387,36 @@ sub _init_db {
     $dbh->rollback and return;
   };
 
-  # PubSub Indices
+  # Topic subscription indices
   unless ($dbh->do(
     'CREATE INDEX IF NOT EXISTS pubsub_topic_i on PubSub (topic)'
   )) {
     $dbh->rollback and return;
   };
 
+  # Content
+  unless ($dbh->do(
+    'CREATE TABLE PubSub_content (
+       id       INTEGER PRIMARY KEY,
+       author   TEXT,
+       guid     TEXT,
+       title    TEXT,
+       updated  INTEGER,
+       content  TEXT
+     )')) {
+    $dbh->rollback and return;
+  };
+
+  # Content indices
+  foreach (qw/guid updated/) {
+    unless ($dbh->do(
+      "CREATE INDEX IF NOT EXISTS pubsub_content_${_}_i on PubSub_content (${_})"
+    )) {
+      $dbh->rollback and return;
+    }
+  };
+
+  # Everything went fine
   $dbh->commit and return 1;
 };
 
@@ -424,7 +467,7 @@ __DATA__
 <p style="font-size: 60%">von <%= $entry->{author} %>,
 
 % my $date = $entry->{updated} ?
-%    Mojolicious::Plugin::Date::RFC3339->new($entry->{updated})->to_string : '';
+%    XML::Loy::Date::RFC3339->new($entry->{updated})->to_string : '';
 
    <%= $date  %></p>
 % };
