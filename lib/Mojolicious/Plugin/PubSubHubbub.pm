@@ -785,6 +785,12 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
     hub   => 'https://hub.sojolicio.us'
   );
 
+  # Discover a resource
+  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+  if ($topic && $hub) {
+    $c->pubsub_subscribe( topic => $topic, hub   => $hub );
+  };
+
   # Unsubscribe from a feed
   $c->pubsub_unsubscribe(
     topic => 'https://sojolicio.us/feed.atom',
@@ -869,6 +875,14 @@ called C<pubsub-callback>.
 
 
 =head1 HELPERS
+
+=head2 pubsub_discover
+
+  # In Controllers
+  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+
+Heuristically discover a topic feed and a hub based on a URI.
+
 
 =head2 pubsub_publish
 
