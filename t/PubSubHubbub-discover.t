@@ -31,6 +31,13 @@ Link: <http://example.org/>;
 
 LINKS
 
+my @headers = $headers->header('link');
+
+print $headers[0]->[0];
+
+
+__END__
+
 my @prev = Mojolicious::Plugin::PubSubHubbub::_discover_link($headers, 'previous');
 is($prev[0]->[0], 'http://example.com/TheBook/chapter2', 'href');
 is($prev[0]->[1], 'unknown', 'type');
