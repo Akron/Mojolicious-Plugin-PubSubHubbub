@@ -192,18 +192,24 @@ sub verify {
 };
 
 
+# Parse more clever! Return Hash references
+# https://tools.ietf.org/html/rfc5988
 sub _link {
+TODO!!!!!
   my $header = shift;
   my $rel = shift;
   my @href;
   foreach (@{$header->header('link')}) {
-    if ($_ =~ /^<([^>]+?)>.*?rel\s*=\s*(["']?)$rel\2\s*(;|$)/ni) {
-      push(@href, $1);
+    if ($_ =~ /^<([^>]+?)>.*?rel\s*=\s*(["']?)$rel\2\s*(?:type\s*=\s*(["']?)(.+?)\3)?(;|$)/ni) {
+      push(@href, [$1, $4 || 'unknown']);
     };
   };
   return @href;
 };
 
+
+# Discover topic and hub based on a URI
+# That's a rather complex heuristic, but should gain good results
 sub discover {
   my ($c, $uri) = @_;
 
@@ -214,9 +220,124 @@ sub discover {
 
   my $tx = $ua->get($uri);
 
+  my ($hub, $topic);
+
+  # We prefer atom over rss over rdf over unknown
+  my @preferences = qw/atom rss rdf feed/;
+
   if ($tx->success) {
-    _link($tx->res->headers, 'hub');
-    $tx->res->dom->find('link[rel="alternate"]')
+    my $res = $tx->res;
+
+    my $headers = $res->headers;
+    my @hubs = _link($headers, 'hub');
+    my @topics = _link($headers, 'self');
+    $hub = $hubs[0] if scalar @hubs >= 1;
+    $topic = $topics[0] if scalar @topics >= 1;
+
+    return ($topic, $hub) if $topic && $hub;
+
+    # discover topic
+    unless ($topic) {
+
+      if (@topics = _link($headers, 'alternate')) {
+TODO ************************
+      };
+
+      # Ressource is html
+      if ($res->content_type =~ /html/) {
+	my $dom = $res->dom;
+	if ($dom) {
+	  my %alternate;
+	  my $pos = 0;
+
+	  # Find alternate representations
+	  $dom->find('link[rel="alternate"]')->each(
+	    sub {
+	      my ($href, $type, $title) = @{$_->attrs}{qw/href type title/};
+	      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml$}i;
+
+	      # Set short type
+	      my $short_type = $1 if $1;
+
+	      # Short type yet not known
+	      unless ($short_type) {
+
+		# Set short type by file ending
+		$short_type = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
+	      };
+
+	      # Choose correct interpretation
+	      my $alternate = ($alternate{$short_type || 'feed'} //= []);
+
+	      # Increment position
+	      $pos++;
+
+	      # No title given
+	      unless ($title) {
+		push(@$alternate, [$href, 2, $pos]) and return;
+	      };
+
+	      # Guess which feed is correct, based on title and position
+	      if ($title =~ /(?:feed|stream)/i) {
+		if ($title =~ /[ck]omment/) {
+		  push(@$alternate, [$href, 1, $pos]);
+		}
+		else {
+		  push(@$alternate, [$href, 3, $pos]);
+		};
+	      };
+	      return;
+	    }
+	  );
+
+	  # Select by type
+	  foreach my $type (@preferences) {
+	    next unless $altenate{$type};
+	    my ($best) = (sort {
+
+	      # Sort by title
+	      if ($a->[1] < $b->[1]) {
+		return -1;
+	      } elsif ($a->[1] > $b->[1]) {
+		return 1;
+	      }
+	      # Sort by position
+	      elsif ($a->[2] < $b->[2]) {
+		return 1;
+	      } elsif ($a->[2] > $b->[2]) {
+		return -1;
+	      }
+	      # Equal
+	      else {
+		return -1;
+	      };
+	    } values @{$alternate{$type}});
+
+	    # Already found the best match
+	    if ($best->[1] eq '3') {
+	      $topic = $best->[0];
+	      last;
+	    };
+
+	    # That's the best match of this type
+	    $alternate{$type} = $best;
+	  };
+
+	  # Not found yet
+	  my $best = [undef,0,0];
+	  unless ($topic) {
+	    foreach (@preferences) {
+	      my $type = $alternate{$_};
+	      next unless $type;
+	      $best = $type if $type->[1] > $best->[1];
+	    };
+	  };
+
+	  # Topic is the best match
+	  $topic = $best->[0] if $best-[0];
+	};
+      };
+    };
   };
 
   $xml->at('link[rel=hub]')->attrs('href');
