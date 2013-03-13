@@ -21,6 +21,9 @@ has 'hub';
 # Character set for challenge
 my @challenge_chars = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
 
+# We prefer atom over rss over rdf over unknown
+my @preferences = qw/atom rss rdf feed/;
+
 
 # Register plugin
 sub register {
@@ -192,26 +195,151 @@ sub verify {
 };
 
 
-# Parse more clever! Return Hash references
-# https://tools.ietf.org/html/rfc5988
-sub _link {
-TODO!!!!!
+# This is extremely simplified from https://tools.ietf.org/html/rfc5988
+sub _discover_link {
   my $header = shift;
   my $rel = shift;
   my @href;
-  foreach (@{$header->header('link')}) {
-    if ($_ =~ /^<([^>]+?)>.*?rel\s*=\s*(["']?)$rel\2\s*(?:type\s*=\s*(["']?)(.+?)\3)?(;|$)/ni) {
-      push(@href, [$1, $4 || 'unknown']);
+  foreach ($header->header('link')) {
+    $_ = join(" ", @$_);
+
+    # Check for link with correct relation
+    if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"$rel".*?)$/mi) {
+      my $href = $1;
+      my $check = $2;
+      my ($type, $title);
+
+      # Set title
+      if ($check =~ /title\s*=\s*"([^"]+?)"/omi) {
+	$title = $1;
+      };
+
+      # Set type
+      if ($check =~ /type\s*=\s*"([^"]+?)"/omi) {
+	$type = $1;
+      };
+
+      # Push found link
+      push(@href, [$href, $type || 'unknown', $title || '']);
     };
   };
+
+  # Return array
   return @href;
+};
+
+
+sub _discover_html {
+  my $res = shift;
+  my $dom = $res->dom or return;
+
+  my ($topic, $hub);
+
+  my %alternate;
+  my $pos = 0;
+
+  # Find alternate representations
+  $dom->find('link[rel="alternate"]')->each(
+    sub {
+      my ($href, $type, $title) = @{$_->attrs}{qw/href type title/};
+      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml$}i;
+
+      # Set short type
+      my $short_type = $1 if $1;
+
+      # Short type yet not known
+      unless ($short_type) {
+
+	# Set short type by file ending
+	$short_type = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
+      };
+
+      # Choose correct interpretation
+      my $alternate = ($alternate{$short_type || 'feed'} //= []);
+
+      # Increment position
+      $pos++;
+
+      # No title given
+      unless ($title) {
+	push(@$alternate, [$href, 2, $pos]) and return;
+      };
+
+      # Guess which feed is correct, based on title and position
+      if ($title =~ /(?:feed|stream)/i) {
+	if ($title =~ /[ck]omment/) {
+	  push(@$alternate, [$href, 1, $pos]);
+	}
+	else {
+	  push(@$alternate, [$href, 3, $pos]);
+	};
+      };
+      return;
+    }
+  );
+
+  # Select by type
+  foreach my $type (@preferences) {
+    next unless $alternate{$type};
+    my ($best) = (sort {
+
+      # Sort by title
+      if ($a->[1] < $b->[1]) {
+	return 1;
+      } elsif ($a->[1] > $b->[1]) {
+	return -1;
+      }
+      # Sort by position
+      elsif ($a->[2] < $b->[2]) {
+	return -1;
+      } elsif ($a->[2] > $b->[2]) {
+	return 1;
+      }
+      # Equal
+      else {
+	return 1;
+      };
+    } values @{$alternate{$type}});
+
+    # Already found the best match
+    if ($best->[1] eq '3') {
+      $topic = $best->[0];
+      last;
+    };
+
+    # That's the best match of this type
+    $alternate{$type} = $best;
+  };
+
+  # topic not found yet
+  unless ($topic) {
+
+    # Not found yet
+    my $best = [undef,0,0];
+    unless ($topic) {
+      foreach (@preferences) {
+	my $type = $alternate{$_};
+	next unless $type;
+	$best = $type if $type->[1] > $best->[1];
+      };
+    };
+
+    # Topic is the best match
+    $topic = $best->[0] if $best-[0];
+  };
+
+
+  return ($topic, $hub);
 };
 
 
 # Discover topic and hub based on a URI
 # That's a rather complex heuristic, but should gain good results
 sub discover {
-  my ($c, $uri) = @_;
+  my $self = shift;
+  my $c = shift;
+
+  my $uri = Mojo::URL->new(shift());
 
   my $ua = Mojo::UserAgent->new(
     max_redirects => 3,
@@ -222,129 +350,38 @@ sub discover {
 
   my ($hub, $topic);
 
-  # We prefer atom over rss over rdf over unknown
-  my @preferences = qw/atom rss rdf feed/;
-
   if ($tx->success) {
     my $res = $tx->res;
 
     my $headers = $res->headers;
-    my @hubs = _link($headers, 'hub');
-    my @topics = _link($headers, 'self');
-    $hub = $hubs[0] if scalar @hubs >= 1;
-    $topic = $topics[0] if scalar @topics >= 1;
+    my @hubs = _discover_link($headers, 'hub');
+    my @topics = _discover_link($headers, 'self');
+
+    # Rewrite base
+    $hub = Mojo::URL->new($hubs[0])->base($uri) if scalar @hubs >= 1;
+    $topic = Mojo::URL->new($topics[0])->base($uri) if scalar @topics >= 1;
 
     return ($topic, $hub) if $topic && $hub;
 
     # discover topic
     unless ($topic) {
 
-      if (@topics = _link($headers, 'alternate')) {
-TODO ************************
-      };
+#      if (@topics = _link($headers, 'alternate')) {
+# TODO ************************
+#      };
 
       # Ressource is html
-      if ($res->content_type =~ /html/) {
-	my $dom = $res->dom;
-	if ($dom) {
-	  my %alternate;
-	  my $pos = 0;
-
-	  # Find alternate representations
-	  $dom->find('link[rel="alternate"]')->each(
-	    sub {
-	      my ($href, $type, $title) = @{$_->attrs}{qw/href type title/};
-	      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml$}i;
-
-	      # Set short type
-	      my $short_type = $1 if $1;
-
-	      # Short type yet not known
-	      unless ($short_type) {
-
-		# Set short type by file ending
-		$short_type = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
-	      };
-
-	      # Choose correct interpretation
-	      my $alternate = ($alternate{$short_type || 'feed'} //= []);
-
-	      # Increment position
-	      $pos++;
-
-	      # No title given
-	      unless ($title) {
-		push(@$alternate, [$href, 2, $pos]) and return;
-	      };
-
-	      # Guess which feed is correct, based on title and position
-	      if ($title =~ /(?:feed|stream)/i) {
-		if ($title =~ /[ck]omment/) {
-		  push(@$alternate, [$href, 1, $pos]);
-		}
-		else {
-		  push(@$alternate, [$href, 3, $pos]);
-		};
-	      };
-	      return;
-	    }
-	  );
-
-	  # Select by type
-	  foreach my $type (@preferences) {
-	    next unless $altenate{$type};
-	    my ($best) = (sort {
-
-	      # Sort by title
-	      if ($a->[1] < $b->[1]) {
-		return -1;
-	      } elsif ($a->[1] > $b->[1]) {
-		return 1;
-	      }
-	      # Sort by position
-	      elsif ($a->[2] < $b->[2]) {
-		return 1;
-	      } elsif ($a->[2] > $b->[2]) {
-		return -1;
-	      }
-	      # Equal
-	      else {
-		return -1;
-	      };
-	    } values @{$alternate{$type}});
-
-	    # Already found the best match
-	    if ($best->[1] eq '3') {
-	      $topic = $best->[0];
-	      last;
-	    };
-
-	    # That's the best match of this type
-	    $alternate{$type} = $best;
-	  };
-
-	  # Not found yet
-	  my $best = [undef,0,0];
-	  unless ($topic) {
-	    foreach (@preferences) {
-	      my $type = $alternate{$_};
-	      next unless $type;
-	      $best = $type if $type->[1] > $best->[1];
-	    };
-	  };
-
-	  # Topic is the best match
-	  $topic = $best->[0] if $best-[0];
-	};
+      if ($res->headers->content_type =~ /html/) {
+	($topic, $hub) = _discover_html($res);
       };
     };
   };
 
-  $xml->at('link[rel=hub]')->attrs('href');
+  # $xml->at('link[rel=hub]')->attrs('href');
   # application/atom+xml vs m{^application/r(?:ss|df)\+xml$}
   # not /html
 
-  $topic = $xml->at('link[rel=self]')->attrs('href');
+  # $topic = $xml->at('link[rel=self]')->attrs('href');
 
   return ($topic, $hub);
 
