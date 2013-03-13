@@ -6,14 +6,12 @@ use Mojo::UserAgent;
 use Mojo::DOM;
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
-# Todo: Support Link-Headers for discovery-Method,
-#       when subscribing to html, rss without hub etc.
-#       Test with http://push-pub.appspot.com/
-
+# Todo: - Test with http://push-pub.appspot.com/
+#       - Make everything async
 
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
@@ -105,6 +103,13 @@ sub register {
 	$plugin->_change_subscription(shift, mode => $action, @_);
       });
   };
+
+  # Add 'discovery' helper
+  $mojo->helper(
+    pubsub_discover => sub {
+      $plugin->discover( @_ )
+    }
+  );
 };
 
 
@@ -184,6 +189,56 @@ sub verify {
 
   # Not found
   return $c->render_not_found;
+};
+
+
+sub _link {
+  my $header = shift;
+  my $rel = shift;
+  my @href;
+  foreach (@{$header->header('link')}) {
+    if ($_ =~ /^<([^>]+?)>.*?rel\s*=\s*(["']?)$rel\2\s*(;|$)/ni) {
+      push(@href, $1);
+    };
+  };
+  return @href;
+};
+
+sub discover {
+  my ($c, $uri) = @_;
+
+  my $ua = Mojo::UserAgent->new(
+    max_redirects => 3,
+    name => __PACKAGE__ . ' v' . $VERSION
+  );
+
+  my $tx = $ua->get($uri);
+
+  if ($tx->success) {
+    _link($tx->res->headers, 'hub');
+    $tx->res->dom->find('link[rel="alternate"]')
+  };
+
+  $xml->at('link[rel=hub]')->attrs('href');
+  # application/atom+xml vs m{^application/r(?:ss|df)\+xml$}
+  # not /html
+
+  $topic = $xml->at('link[rel=self]')->attrs('href');
+
+  return ($topic, $hub);
+
+  # 1. Check Link-Header
+  # 2. Check Content
+  #    -> is RSS/Atom
+  #       3. Check for hub
+  #    -> is HTML
+  #       3. Check for Atom/RSS and hub
+  #       -> no hub
+  #          4. Retrieve feed
+  #          5. Check Link Header
+  #          6. Check for hub
+  # Todo: - Support Link-Headers for discovery-Method,
+  # when subscribing to html, rss without hub etc.
 };
 
 
