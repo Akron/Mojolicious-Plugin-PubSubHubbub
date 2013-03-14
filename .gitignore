@@ -3,6 +3,7 @@ log
 sandbox
 Sandbox
 examples/*.sqlite
+lib/Mojolicious/Plugin/PubSubHubbub/*
 public
 todo.org
 script*
