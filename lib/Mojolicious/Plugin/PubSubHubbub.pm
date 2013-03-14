@@ -15,7 +15,7 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
-has 'hub';
+has 'hub' => 'http://pubsubhubbub.appspot.com/';
 
 
 # Character set for challenge
@@ -195,134 +195,202 @@ sub verify {
 };
 
 
+# Discover links from header
 # This is extremely simplified from https://tools.ietf.org/html/rfc5988
-sub _discover_link_rel {
+sub _discover_header_links {
   my $header = shift;
-  my $rel = shift;
-  my @href;
+
+  my %links;
+
   foreach ($header->header('link')) {
     $_ = join(' ', @$_);
 
     # Check for link with correct relation
-    if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"$rel".*?)$/mi) {
-      my $href = $1;
-      my $check = $2;
-      my ($type, $title);
+    if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"(self|hub|alternate)".*?)$/mi) {
+      my %link = (
+	href => $1,
+	rel  => $3
+      );
 
-      # Set title
-      if ($check =~ /title\s*=\s*"([^"]+?)"/omi) {
-	$title = $1;
-      };
+      my $check = $2;
 
       # Set type
       if ($check =~ /type\s*=\s*"([^"]+?)"/omi) {
-	$type = $1;
+	my $type = $1;
+	next if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml}i;
+	$link{type} = $type;
+	$link{short_type} = $1;
       };
 
+      # Set title
+      if ($check =~ /title\s*=\s*"([^"]+?)"/omi) {
+	$link{title} = $1;
+      };
+
+      unless ($link{short_type}) {
+	if ($link{href} =~ m/\.(r(?:ss|df)|atom)$/i) {
+	  $link{short_type} = $1;
+	};
+      };
+
+      my $rel = $link{rel};
+
       # Push found link
-      push(@href, [$href, $type || 'unknown', $title || '']);
+      $links{$rel} //= [];
+      push(@{$links{$rel}}, \%link);
     };
   };
 
   # Return array
-  return @href;
+  return \%links;
 };
 
 
-sub _discover_link {
-  my $res = shift;
-  my $headers = $res->headers or return;
-  my @hubs   = _discover_link_rel($headers, 'hub');
-  my @topics = _discover_link_rel($headers, 'self');
+# Discover links from dom tree
+sub _discover_dom_links {
+  my $dom = shift;
 
-  # Rewrite base
-  my $hub   = Mojo::URL->new( $hubs[0] )->base( $uri )   if scalar @hubs >= 1;
-  my $topic = Mojo::URL->new( $topics[0] )->base( $uri ) if scalar @topics >= 1;
-
-  return ($topic, $hub);
-};
-
-sub _discover_html {
-  my $res = shift;
-  my $dom = $res->dom or return;
-
-  my ($topic, $hub);
-
-  my %alternate;
-  my $pos = 0;
+  my %links;
 
   # Find alternate representations
-  $dom->find('link[rel="alternate"]')->each(
+  $dom->find('link[rel="alternate"], link[rel="self"], link[rel="hub"]')->each(
     sub {
-      my ($href, $type, $title) = @{$_->attrs}{qw/href type title/};
-      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml$}i;
+      my ($href, $rel, $type, $title) = @{$_->attrs}{qw/href rel type title/};
+
+      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml}i;
 
       # Set short type
       my $short_type = $1 if $1;
+
+      return unless $href && $rel;
+
+      my %link = (
+	href => $href,
+	rel  => $rel
+      );
 
       # Short type yet not known
       unless ($short_type) {
 
 	# Set short type by file ending
-	$short_type = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
+	$link{short_type} = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
+      }
+
+      else {
+	$link{short_type} = $short_type;
       };
 
-      # Choose correct interpretation
-      my $alternate = ($alternate{$short_type || 'feed'} //= []);
+      $link{title} = $title if $title;
+      $link{type}  = $type if $type;
 
-      # Increment position
-      $pos++;
-
-      # No title given
-      unless ($title) {
-	push(@$alternate, [$href, 2, $pos]) and return;
-      };
-
-      # Guess which feed is correct, based on title and position
-      if ($title =~ /(?:feed|stream)/i) {
-	if ($title =~ /[ck]omment/) {
-	  push(@$alternate, [$href, 1, $pos]);
-	}
-	else {
-	  push(@$alternate, [$href, 3, $pos]);
-	};
-      };
-      return;
+      # Push found link
+      $links{$rel} //= [];
+      push(@{$links{$rel}}, \%link);
     }
   );
 
-  # Select by type
-  foreach my $type (@preferences) {
-    next unless $alternate{$type};
-    my ($best) = (sort {
+  # Return array
+  return \%links;
+};
 
-      # Sort by title
-      if ($a->[1] < $b->[1]) {
-	return 1;
-      } elsif ($a->[1] > $b->[1]) {
-	return -1;
-      }
-      # Sort by position
-      elsif ($a->[2] < $b->[2]) {
-	return -1;
-      } elsif ($a->[2] > $b->[2]) {
-	return 1;
-      }
-      # Equal
-      else {
-	return 1;
+
+
+
+
+# Useless
+sub _discover_link {
+  my $res = shift;
+  my $base = shift;
+
+  my $headers = $res->headers or return;
+  my @hubs   = _discover_link_rel($headers, 'hub');
+  my @topics = _discover_link_rel($headers, 'self');
+
+  # Rewrite base
+  my $hub   = $hubs[0] if scalar @hubs >= 1;
+  my $topic = $topics[0] if scalar @topics >= 1;
+
+  if ($base) {
+    foreach ($hub, $topic) {
+      $_ = Mojo::URL->new( $_ )->base( $base )
+    };
+  };
+
+  return ($topic, $hub);
+};
+
+
+
+sub _discover_sort_links {
+  my $links = shift;
+
+  my $alternate = $links{alternate};
+
+
+# return self und hub
+
+
+  if ($alternate) {
+    foreach my $link (values %$alternate) {
+
+      # No title given
+      unless ($link->{title}) {
+	$link->{pref} = 2 and next;
       };
-    } values @{$alternate{$type}});
 
-    # Already found the best match
-    if ($best->[1] eq '3') {
-      $topic = $best->[0];
-      last;
+      # Guess which feed is correct, based on title and position
+      if ($link->{title} =~ /(?:feed|stream)/i) {
+	if ($link->{title} =~ /[ck]omment/) {
+	  $link->{pref} = 1;
+	}
+	else {
+	  $link->{pref} = 3;
+	};
+      };
+
+      $link->{pref} = 2;
     };
 
-    # That's the best match of this type
-    $alternate{$type} = $best;
+TODO!!!!!
+
+    # Select by type
+    foreach my $type (@preferences) {
+      next unless $alternate{$type};
+      my ($best) = (sort {
+
+	# Sort by title
+	if ($a->[1] < $b->[1]) {
+	  return 1;
+	} elsif ($a->[1] > $b->[1]) {
+	  return -1;
+	}
+	# Sort by position
+	elsif ($a->[2] < $b->[2]) {
+	  return -1;
+	} elsif ($a->[2] > $b->[2]) {
+	  return 1;
+	}
+	# Equal
+	else {
+	  return 1;
+	};
+      } values @{$alternate{$type}});
+
+      # Already found the best match
+      if ($best->[1] eq '3') {
+	$topic = $best->[0];
+	last;
+      };
+
+
+      # That's the best match of this type
+      $alternate{$type} = $best;
+    };
+
   };
+
+
+
 
   # topic not found yet
   unless ($topic) {
@@ -340,6 +408,20 @@ sub _discover_html {
     # Topic is the best match
     $topic = $best->[0] if $best-[0];
   };
+
+};
+
+
+
+sub _discover_html {
+  my $res = shift;
+  my $dom = $res->dom or return;
+
+  my ($topic, $hub);
+
+  my %alternate;
+  my $pos = 0;
+
 
   return ($topic, $hub);
 };
@@ -893,7 +975,10 @@ as part of the configuration file with the key C<PubSubHubbub>.
   my $hub = $ps->hub;
 
 The preferred hub. Currently local hubs are not supported.
-Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
+Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
+
+Defaults to L<pubsubhubbub.appspot.com|http://pubsubhubbub.appspot.com/>,
+but this B<may change without warnings!>
 
 
 =head2 lease_seconds
