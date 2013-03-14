@@ -369,7 +369,7 @@ $app->hook(
 
     if ($request_count == 1) {
       my $topic = $params->{topic};
-      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to subscribe');
+      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to subscribe A');
     };
   });
 
@@ -380,14 +380,14 @@ $app->hook(
     # First request
     if ($request_count == 1) {
       my $topic = $params->{topic};
-      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to subscribe');
+      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to subscribe B');
       is($body, 'okay', 'Response body');
     }
 
     # Second request
     elsif ($request_count == 2) {
       my $topic = $params->{topic};
-      is($topic, 'http://sojolicio.us/blog/unknown.xml', 'Topic to subscribe');
+      is($topic, 'http://sojolicio.us/blog/unknown.xml', 'Topic to subscribe C');
       is($body, 'not_okay', 'Response body');
     };
   });
@@ -398,7 +398,7 @@ $app->hook(
 
     if ($request_count == 3) {
       my $topic = $params->{topic};
-      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to unsubscribe');
+      is($topic, 'http://sojolicio.us/blog.xml', 'Topic to unsubscribe D');
     };
   }
 );
@@ -427,10 +427,12 @@ ok(!$app->pubsub_subscribe(topic => 'http://sojolicio.us/'),
    'Subscription invalid');
 ok(!$app->pubsub_subscribe(hub => '/hub'),
    'Subscription invalid');
+
 ok(!$app->pubsub_subscribe(
   topic => 'sojolicio.us',
   hub => '/hub'),
    'Subscription invalid');
+
 ok($app->pubsub_subscribe(
   topic => 'http://sojolicio.us/blog.xml',
   hub   => '/hub'
@@ -474,7 +476,7 @@ $t->get_ok('/push?hub.mode=foobar&hub.topic=http://sojolicio.us/blog.xml'.
 	     '&hub.challenge=4567')
   ->content_type_like(qr{^text/html})
   ->status_is(404);
-$t->post_form_ok('/push' => { 'hub.mode' => 'foobar',
+$t->post_ok('/push' => form => { 'hub.mode' => 'foobar',
 			      'hub.topic' => 'http://sojolicio.us/blog.xml',
 			      'hub.challenge' => 4567 })
   ->content_type_like(qr{^text/html})
@@ -491,7 +493,7 @@ $app->callback(
     return;
   });
 
-$t->post_form_ok('/push' => { 'hub.mode' => 'subscribe',
+$t->post_ok('/push' => form => { 'hub.mode' => 'subscribe',
 			      'hub.topic' => 'http://sojolicio.us/blog.xml',
 			      'hub.challenge' => 4567 })
   ->content_type_like(qr{^text/html})
@@ -499,7 +501,7 @@ $t->post_form_ok('/push' => { 'hub.mode' => 'subscribe',
 
 $request_count = 2;
 
-$t->post_form_ok('/push' => { 'hub.mode' => 'subscribe',
+$t->post_ok('/push' => form => { 'hub.mode' => 'subscribe',
 			      'hub.topic' => 'http://sojolicio.us/blog.xml',
 			      'hub.challenge' => 4567 })
   ->content_type_like(qr{^text/plain})
@@ -508,7 +510,7 @@ $t->post_form_ok('/push' => { 'hub.mode' => 'subscribe',
 
 $request_count = 1;
 
-$t->post_form_ok('/push' => { 'hub.mode' => 'unsubscribe',
+$t->post_ok('/push' => form => { 'hub.mode' => 'unsubscribe',
 			      'hub.topic' => 'http://sojolicio.us/blog.xml',
 			      'hub.challenge' => 4567 })
   ->content_type_like(qr{^text/html})
@@ -516,7 +518,7 @@ $t->post_form_ok('/push' => { 'hub.mode' => 'unsubscribe',
 
 $request_count = 2;
 
-$t->post_form_ok('/push' => { 'hub.mode' => 'unsubscribe',
+$t->post_ok('/push' => form => { 'hub.mode' => 'unsubscribe',
 			      'hub.topic' => 'http://sojolicio.us/blog.xml',
 			      'hub.challenge' => 4567 })
   ->content_type_like(qr{^text/plain})

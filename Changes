@@ -1,3 +1,6 @@
+0.03-2013-03-14
+	- Added discovery.
+
 0.02 2013-03-12
         - Changed 'on_pubsub_acceptance' hook
 	  to 'pubsub_accept' callback.

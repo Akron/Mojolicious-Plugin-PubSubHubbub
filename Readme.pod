@@ -9,7 +9,10 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
 
   # Mojolicious
   $app->plugin(PubSubHubbub => {
-    hub => 'https://hub.example.org/'
+    hub => 'https://hub.example.org/',
+    pubsub_verify => sub {
+      return 1;
+    }
   });
 
   my $r = $app->routes;
@@ -34,6 +37,12 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us'
   );
+
+  # Discover a resource
+  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+  if ($topic && $hub) {
+    $c->pubsub_subscribe( topic => $topic, hub   => $hub );
+  };
 
   # Unsubscribe from a feed
   $c->pubsub_unsubscribe(
@@ -94,7 +103,10 @@ as part of the configuration file with the key C<PubSubHubbub>.
   my $hub = $ps->hub;
 
 The preferred hub. Currently local hubs are not supported.
-Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
+Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
+
+Defaults to L<pubsubhubbub.appspot.com|http://pubsubhubbub.appspot.com/>,
+but this B<may change without warnings!>
 
 
 =head2 lease_seconds
@@ -104,6 +116,8 @@ Establishes a L<Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
 
 Seconds a subscription is valid by default before auto refresh
 is enabled.
+
+Defaults to 30 days.
 
 
 =head1 SHORTCUTS
@@ -120,6 +134,14 @@ called C<pubsub-callback>.
 
 =head1 HELPERS
 
+=head2 pubsub_discover
+
+  # In Controllers
+  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+
+Heuristically discover a topic feed and a hub based on a URI.
+
+
 =head2 pubsub_publish
 
   # In Controllers
@@ -131,6 +153,7 @@ called C<pubsub-callback>.
 
 Publish a list of feeds in terms of a notification to the hub.
 Supports named routes, relative paths and absolute URIs.
+
 
 =head2 pubsub_subscribe
 
@@ -175,35 +198,70 @@ if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
 
-=head1 HOOKS
+=head1 CALLBACKS
 
-=head2 on_pubsub_acceptance
+=head2 pubsub_accept
 
-  $mojo->hook(
-    on_pubsub_acceptance => sub {
-      my ($c, $type, $topics, $secret, $on_behalf) = @_;
+  # Establish callback
+  $mojo->callback(
+    pubsub_accept => sub {
+      my ($c, $type, $topics) = @_;
 
-      @$topics = grep($_ !~ /catz/, @$topics);
-      $$secret = 'zoidberg';
-      $$on_behalf = 3;
+      # Filter topics
+      my @new_topics = grep($_ !~ /catz/, @$topics);
 
+      # Set secret
+      my $secret     = 'z0idberg';
+
+      # Set X-Hub-On-Behalf-Of value
+      my $on_behalf  = 3;
+      return (\@new_topics, $secret, $on_behalf);
+    });
+
+This callback is released, when content arrives at the
+pubsub endpoint. The parameters passed to the callback
+include the current controller object, the content type,
+and an array reference of topics.
+
+Expects an array reference of maybe filtered topics,
+a secret if necessary, and the value of C<X-Hub-On-Behalf-Of>.
+If the returned topic list is empty, the processing will stop.
+If the callback is not established, the complete content will be
+processed.
+
+The callback can be established with the
+L<callback|Mojolicious::Plugin::Util::Callback/callback>
+helper or on registration.
+
+
+=head2 pubsub_verify
+
+  # Establish callback
+  $mojo->callback(
+    pubsub_verify => sub {
+      my ($c, $param) = @_;
+
+      # Topic is valid
+      if ($param->{topic} =~ /catz/ &&
+          $param->{verify_token} eq 'zoidberg') {
+        return 1;
+      };
+
+      # Not verified
       return;
-     });
+    });
 
-This hook is released, when content arrives at the pubsub
-endpoint. The parameters include the current
-controller object, the content type, an array reference of topics,
-an empty string reference for a possible secret, and a string
-reference for the C<X-Hub-On-Behalf-Of> value, which is initially 0.
+This callback is released, when a verification is requested. The parameters
+include the current controller object and the parameters
+of the verification request as a hash reference.
+If verification is granted, this callback must return a true value.
 
-This hook can be used to filter unwanted topics, to give a
-necessary secret for signed content, and information on
-the user count of the subscription to the processor.
+The callback can be established with the
+L<callback|Mojolicious::Plugin::Util::Callback/callback>
+helper or on registration.
 
-If the topic list is returned as an empty list, the processing will stop.
 
-If nothing in this hook happens, the complete content will be processed.
-
+=head1 HOOKS
 
 =head2 on_pubsub_content
 
@@ -220,15 +278,15 @@ If nothing in this hook happens, the complete content will be processed.
       return;
     });
 
-This hook is released, when desired (i.e., verified and filtered)
-content is delivered.
+This hook is released, when desired (i.e., verified and optionally
+filtered) content arrives.
 The parameters include the current
 controller object, the content type, and the - maybe topic
 filtered - content as a L<Mojo::DOM> object.
 
 B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
 entry in the feed (either RSS or Atom) includes its topic in
-'source link[rel="self"][href]'.
+C<source link[rel="self"]>.
 
 
 =head2 before_pubsub_subscribe
@@ -311,31 +369,11 @@ and the response body.
 This hook can be used to deal with errors.
 
 
-=head2 on_pubsub_verification
-
-  $mojo->hook(
-    on_pubsub_verification => sub {
-      my ($c, $params, $ok_ref) = @_;
-
-      if ($params->{topic} =~ /catz/ &&
-          $params->{verify_token} eq 'zoidberg') {
-        $$ok_ref = 1;
-      };
-
-      return;
-    });
-
-This hook is released, when a verification is requested. The parameters
-include the current controller object, the parameters
-of the verification request as a hash reference, and a string reference
-to a false value.
-If verification is granted, this value has to be set to true.
-
-
 =head1 DEPENDENCIES
 
 L<Mojolicious>,
-L<Mojolicious::Plugin::Util::Endpoint>.
+L<Mojolicious::Plugin::Util::Endpoint>,
+L<Mojolicious::Plugin::Util::Callback>.
 
 
 =head1 AVAILABILITY

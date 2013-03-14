@@ -13,16 +13,14 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 # Todo: - Test with http://push-pub.appspot.com/
 #       - Make everything async
 
+
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
-has 'hub' => 'http://pubsubhubbub.appspot.com/';
+has hub => 'http://pubsubhubbub.appspot.com/';
 
 
 # Character set for challenge
 my @challenge_chars = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
-
-# We prefer atom over rss over rdf over unknown
-my @preferences = qw/atom rss rdf feed/;
 
 
 # Register plugin
@@ -64,7 +62,7 @@ sub register {
     $plugin->lease_seconds($param->{lease_seconds});
   };
 
-  push (@{ $mojo->renderer->classes }, __PACKAGE__);
+  # push (@{ $mojo->renderer->classes }, __PACKAGE__);
 
   # Add 'pubsub' shortcut
   $mojo->routes->add_shortcut(
@@ -140,7 +138,7 @@ sub publish {
   );
 
   # Post to hub
-  my $res = $ua->post_form( $plugin->hub, \%post )->res;
+  my $res = $ua->post( $plugin->hub => form => \%post )->res;
 
   # No response
   unless ($res) {
@@ -294,134 +292,91 @@ sub _discover_dom_links {
 };
 
 
-
-
-
-# Useless
-sub _discover_link {
-  my $res = shift;
-  my $base = shift;
-
-  my $headers = $res->headers or return;
-  my @hubs   = _discover_link_rel($headers, 'hub');
-  my @topics = _discover_link_rel($headers, 'self');
-
-  # Rewrite base
-  my $hub   = $hubs[0] if scalar @hubs >= 1;
-  my $topic = $topics[0] if scalar @topics >= 1;
-
-  if ($base) {
-    foreach ($hub, $topic) {
-      $_ = Mojo::URL->new( $_ )->base( $base )
-    };
-  };
-
-  return ($topic, $hub);
-};
-
-
-
+# Heuristically sort links to best match the topic
 sub _discover_sort_links {
   my $links = shift;
 
-  my $alternate = $links{alternate};
+  my ($topic, $hub);
 
+  # Get self link as topic
+  my $self = $links->{self};
 
-# return self und hub
+  if ($self) {
+    foreach my $link (@$self) {
+      $topic ||= $link;
+      if ($link->{short_type} && !$topic->{short_type}) {
+	$topic = $link;
+      };
+    };
+  };
 
+  # Get hub
+  my $hubs = $links->{hub};
+
+  if ($hubs) {
+    foreach my $link (@$hubs) {
+      $hub ||= $link;
+      if ($link->{short_type} && !$hub->{short_type}) {
+	$hub = $link;
+      };
+    };
+  };
+
+  return ($topic, $hub) if $topic && $hub;
+
+  # Check alternates
+  my $alternate = $links->{alternate};
 
   if ($alternate) {
-    foreach my $link (values %$alternate) {
+    foreach my $link (@$alternate) {
 
       # No title given
       unless ($link->{title}) {
-	$link->{pref} = 2 and next;
-      };
+	$link->{pref} = 2;
+      }
 
       # Guess which feed is correct, based on title and position
-      if ($link->{title} =~ /(?:feed|stream)/i) {
-	if ($link->{title} =~ /[ck]omment/) {
+      elsif ($link->{title} =~ /(?i:feed|stream)/i) {
+	if ($link->{title} =~ /[ck]omment/i) {
 	  $link->{pref} = 1;
 	}
 	else {
 	  $link->{pref} = 3;
 	};
-      };
+      }
 
-      $link->{pref} = 2;
+      else {
+	$link->{pref} = 2;
+      };
     };
 
-TODO!!!!!
+    # Get best topic
+    ($topic) = (sort {
 
-    # Select by type
-    foreach my $type (@preferences) {
-      next unless $alternate{$type};
-      my ($best) = (sort {
-
-	# Sort by title
-	if ($a->[1] < $b->[1]) {
-	  return 1;
-	} elsif ($a->[1] > $b->[1]) {
-	  return -1;
-	}
-	# Sort by position
-	elsif ($a->[2] < $b->[2]) {
-	  return -1;
-	} elsif ($a->[2] > $b->[2]) {
-	  return 1;
-	}
-	# Equal
-	else {
-	  return 1;
-	};
-      } values @{$alternate{$type}});
-
-      # Already found the best match
-      if ($best->[1] eq '3') {
-	$topic = $best->[0];
-	last;
+      # Sort by title
+      if ($a->{pref} < $b->{pref}) {
+	return 1;
+      } elsif ($a->{pref} > $b->{pref}) {
+	return -1;
+      }
+      # Sort by type
+      elsif ($a->{short_type} gt $b->{short_type}) {
+	return 1;
+      } elsif ($a->{short_type} lt $b->{short_type}) {
+	return -1;
+      }
+      # Sort by length
+      elsif (length($a->{href}) > length($b->{href})) {
+	return 1;
+      } elsif (length($a->{href}) <= length($b->{href})) {
+	return -1;
+      }
+      # Equal
+      else {
+	return -1;
       };
-
-
-      # That's the best match of this type
-      $alternate{$type} = $best;
-    };
-
+    } values @$alternate);
   };
-
-
-
-
-  # topic not found yet
-  unless ($topic) {
-
-    # Not found yet
-    my $best = [undef,0,0];
-    unless ($topic) {
-      foreach (@preferences) {
-	my $type = $alternate{$_};
-	next unless $type;
-	$best = $type if $type->[1] > $best->[1];
-      };
-    };
-
-    # Topic is the best match
-    $topic = $best->[0] if $best-[0];
-  };
-
-};
-
-
-
-sub _discover_html {
-  my $res = shift;
-  my $dom = $res->dom or return;
-
-  my ($topic, $hub);
-
-  my %alternate;
-  my $pos = 0;
-
 
   return ($topic, $hub);
 };
@@ -433,58 +388,70 @@ sub discover {
   my $self = shift;
   my $c = shift;
 
-  my $uri = Mojo::URL->new(shift());
+  my $base = Mojo::URL->new(shift());
+
+  my $name = __PACKAGE__ . ' v' . $VERSION;
 
   my $ua = Mojo::UserAgent->new(
     max_redirects => 3,
-    name => __PACKAGE__ . ' v' . $VERSION
+    name => $name
   );
 
-  my $tx = $ua->get($uri);
+  my $tx = $ua->get($base);
 
-  my ($hub, $topic);
+  my ($hub, $topic, $nbase, $ntopic);
 
   if ($tx->success) {
     my $res = $tx->res;
 
-    ($topic, $hub) = _discover_link($res);
+    ($topic, $hub) = _discover_sort_links(
+      _discover_header_links($res->headers)
+    );
 
-    return ($topic, $hub) if $topic && $hub;
+    goto STOPDISCOVERY if $topic && $hub;
 
-    # discover topic
-    unless ($topic) {
+    ($topic, $hub) = _discover_sort_links(
+      _discover_dom_links($res->dom)
+    );
 
-#      if (@topics = _link($headers, 'alternate')) {
-# TODO ************************
-#      };
+    goto STOPDISCOVERY if ($topic && $hub) || !$topic;
 
-      # Ressource is html
-      if ($res->headers->content_type =~ /html/) {
-	($topic, $hub) = _discover_html($res);
-      };
+    $ua = Mojo::UserAgent->new(
+      max_redirects => 3,
+      name => $name
+    );
+
+    $nbase = Mojo::URL->new($topic->{href});
+
+    $tx = $ua->get($nbase);
+
+    if ($tx->success) {
+      $res = $tx->res;
+
+      ($ntopic, $hub) = _discover_sort_links(
+	_discover_header_links($res->headers)
+      );
+
+      goto STOPDISCOVERY if $topic && $hub;
+
+      ($ntopic, $hub) = _discover_sort_links(
+	_discover_dom_links($res->dom)
+      );
     };
   };
 
-  # $xml->at('link[rel=hub]')->attrs('href');
-  # application/atom+xml vs m{^application/r(?:ss|df)\+xml$}
-  # not /html
+ STOPDISCOVERY:
 
-  # $topic = $xml->at('link[rel=self]')->attrs('href');
+  $hub = Mojo::URL->new($hub->{href})->base( $nbase || $base ) if $hub;
+
+  if ($ntopic) {
+    $topic = Mojo::URL->new($ntopic->{href})->base($nbase);
+  }
+  elsif ($topic) {
+    $topic = Mojo::URL->new($topic->{href})->base($base);
+  };
 
   return ($topic, $hub);
-
-  # 1. Check Link-Header
-  # 2. Check Content
-  #    -> is RSS/Atom
-  #       3. Check for hub
-  #    -> is HTML
-  #       3. Check for Atom/RSS and hub
-  #       -> no hub
-  #          4. Retrieve feed
-  #          5. Check Link Header
-  #          6. Check for hub
-  # Todo: - Support Link-Headers for discovery-Method,
-  # when subscribing to html, rss without hub etc.
 };
 
 
@@ -549,7 +516,7 @@ sub _change_subscription {
   );
 
   # Send subscription change to hub
-  my $res = $ua->post_form($param{hub}, \%post)->res;
+  my $res = $ua->post($param{hub} => form => \%post)->res;
 
   # No response
   unless ($res) {
@@ -989,6 +956,8 @@ but this B<may change without warnings!>
 Seconds a subscription is valid by default before auto refresh
 is enabled.
 
+Defaults to 30 days.
+
 
 =head1 SHORTCUTS
 
@@ -1023,6 +992,7 @@ Heuristically discover a topic feed and a hub based on a URI.
 
 Publish a list of feeds in terms of a notification to the hub.
 Supports named routes, relative paths and absolute URIs.
+
 
 =head2 pubsub_subscribe
 
@@ -1102,6 +1072,7 @@ The callback can be established with the
 L<callback|Mojolicious::Plugin::Util::Callback/callback>
 helper or on registration.
 
+
 =head2 pubsub_verify
 
   # Establish callback
@@ -1146,15 +1117,15 @@ helper or on registration.
       return;
     });
 
-This hook is released, when desired (i.e., verified and filtered)
-content is delivered.
+This hook is released, when desired (i.e., verified and optionally
+filtered) content arrives.
 The parameters include the current
 controller object, the content type, and the - maybe topic
 filtered - content as a L<Mojo::DOM> object.
 
 B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
 entry in the feed (either RSS or Atom) includes its topic in
-'source link[rel="self"][href]'.
+C<source link[rel="self"]>.
 
 
 =head2 before_pubsub_subscribe
