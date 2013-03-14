@@ -196,12 +196,12 @@ sub verify {
 
 
 # This is extremely simplified from https://tools.ietf.org/html/rfc5988
-sub _discover_link {
+sub _discover_link_rel {
   my $header = shift;
   my $rel = shift;
   my @href;
   foreach ($header->header('link')) {
-    $_ = join(" ", @$_);
+    $_ = join(' ', @$_);
 
     # Check for link with correct relation
     if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"$rel".*?)$/mi) {
@@ -228,6 +228,19 @@ sub _discover_link {
   return @href;
 };
 
+
+sub _discover_link {
+  my $res = shift;
+  my $headers = $res->headers or return;
+  my @hubs   = _discover_link_rel($headers, 'hub');
+  my @topics = _discover_link_rel($headers, 'self');
+
+  # Rewrite base
+  my $hub   = Mojo::URL->new( $hubs[0] )->base( $uri )   if scalar @hubs >= 1;
+  my $topic = Mojo::URL->new( $topics[0] )->base( $uri ) if scalar @topics >= 1;
+
+  return ($topic, $hub);
+};
 
 sub _discover_html {
   my $res = shift;
@@ -328,12 +341,11 @@ sub _discover_html {
     $topic = $best->[0] if $best-[0];
   };
 
-
   return ($topic, $hub);
 };
 
 
-# Discover topic and hub based on a URI
+# Discover topic and hub based on an URI
 # That's a rather complex heuristic, but should gain good results
 sub discover {
   my $self = shift;
@@ -353,13 +365,7 @@ sub discover {
   if ($tx->success) {
     my $res = $tx->res;
 
-    my $headers = $res->headers;
-    my @hubs = _discover_link($headers, 'hub');
-    my @topics = _discover_link($headers, 'self');
-
-    # Rewrite base
-    $hub = Mojo::URL->new($hubs[0])->base($uri) if scalar @hubs >= 1;
-    $topic = Mojo::URL->new($topics[0])->base($uri) if scalar @topics >= 1;
+    ($topic, $hub) = _discover_link($res);
 
     return ($topic, $hub) if $topic && $hub;
 

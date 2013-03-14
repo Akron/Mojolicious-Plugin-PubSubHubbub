@@ -1,3 +1,6 @@
+# Do not accept negative values for X-Hub-On-Behalf-Of!
+
+
 sub hub {
     my $self = shift;
     my $c = shift;
