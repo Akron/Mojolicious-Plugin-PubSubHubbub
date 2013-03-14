@@ -1,5 +1,7 @@
 lib/Mojolicious/Plugin/PubSubHubbub.pm
 t/PubSubHubbub.t
+t/PubSubHubbub-Discovery.t
+examples/pubsubapp
 Changes
 MANIFEST
 LICENSE

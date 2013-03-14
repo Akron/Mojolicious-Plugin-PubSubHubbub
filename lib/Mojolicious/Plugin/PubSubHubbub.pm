@@ -20,7 +20,12 @@ has hub => 'http://pubsubhubbub.appspot.com/';
 
 
 # Character set for challenge
-my @challenge_chars = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
+my @CHALLENGE_CHARS = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
+
+my $FEED_TYPE_RE   = qr{^(?i:application/(atom|r(?:ss|df))\+xml)};
+my $FEED_ENDING_RE = qr{(?i:\.(r(?:ss|df)|atom))$};
+
+my $UA_NAME = __PACKAGE__ . ' v' . $VERSION;
 
 
 # Register plugin
@@ -134,7 +139,7 @@ sub publish {
   # Get user agent
   my $ua = Mojo::UserAgent->new(
     max_redirects => 3,
-    name => __PACKAGE__ . ' v' . $VERSION
+    name => $UA_NAME
   );
 
   # Post to hub
@@ -200,22 +205,25 @@ sub _discover_header_links {
 
   my %links;
 
+  # Iterate through all header links
   foreach ($header->header('link')) {
+
+    # Make multiline headers one line
     $_ = join(' ', @$_);
 
     # Check for link with correct relation
     if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"(self|hub|alternate)".*?)$/mi) {
-      my %link = (
-	href => $1,
-	rel  => $3
-      );
 
+      # Create new link hash
+      my %link = ( href => $1, rel  => $3 );
+
+      # There may be more than one reference
       my $check = $2;
 
       # Set type
       if ($check =~ /type\s*=\s*"([^"]+?)"/omi) {
 	my $type = $1;
-	next if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml}i;
+	next if $type && $type !~ $FEED_TYPE_RE;
 	$link{type} = $type;
 	$link{short_type} = $1;
       };
@@ -225,15 +233,13 @@ sub _discover_header_links {
 	$link{title} = $1;
       };
 
+      # Check file ending for short type
       unless ($link{short_type}) {
-	if ($link{href} =~ m/\.(r(?:ss|df)|atom)$/i) {
-	  $link{short_type} = $1;
-	};
+	$link{short_type} = $1 if $link{href} =~ $FEED_ENDING_RE;
       };
 
-      my $rel = $link{rel};
-
       # Push found link
+      my $rel = $link{rel};
       $links{$rel} //= [];
       push(@{$links{$rel}}, \%link);
     };
@@ -255,17 +261,16 @@ sub _discover_dom_links {
     sub {
       my ($href, $rel, $type, $title) = @{$_->attrs}{qw/href rel type title/};
 
-      return if $type && $type !~ m{^application/(atom|r(?:ss|df))\+xml}i;
+      # Is no supported type
+      return if $type && $type !~ $FEED_TYPE_RE;
 
       # Set short type
       my $short_type = $1 if $1;
 
       return unless $href && $rel;
 
-      my %link = (
-	href => $href,
-	rel  => $rel
-      );
+      # Create new link hash
+      my %link = ( href => $href, rel  => $rel );
 
       # Short type yet not known
       unless ($short_type) {
@@ -274,10 +279,12 @@ sub _discover_dom_links {
 	$link{short_type} = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
       }
 
+      # Set short type
       else {
 	$link{short_type} = $short_type;
       };
 
+      # Set title and type
       $link{title} = $title if $title;
       $link{type}  = $type if $type;
 
@@ -299,10 +306,10 @@ sub _discover_sort_links {
   my ($topic, $hub);
 
   # Get self link as topic
-  my $self = $links->{self};
+  if ($links->{self}) {
 
-  if ($self) {
-    foreach my $link (@$self) {
+    # Find best match of all returned links
+    foreach my $link (@{$links->{self}}) {
       $topic ||= $link;
       if ($link->{short_type} && !$topic->{short_type}) {
 	$topic = $link;
@@ -311,10 +318,10 @@ sub _discover_sort_links {
   };
 
   # Get hub
-  my $hubs = $links->{hub};
+  if ($links->{hub}) {
 
-  if ($hubs) {
-    foreach my $link (@$hubs) {
+    # Find best match of all returned links
+    foreach my $link (@{$links->{hub}}) {
       $hub ||= $link;
       if ($link->{short_type} && !$hub->{short_type}) {
 	$hub = $link;
@@ -322,12 +329,16 @@ sub _discover_sort_links {
     };
   };
 
+  # Already found topic and hub
   return ($topic, $hub) if $topic && $hub;
 
   # Check alternates
   my $alternate = $links->{alternate};
 
+  # Search in alternate representations for best match
   if ($alternate) {
+
+    # Iterate through all alternate links and check their titles
     foreach my $link (@$alternate) {
 
       # No title given
@@ -335,16 +346,21 @@ sub _discover_sort_links {
 	$link->{pref} = 2;
       }
 
-      # Guess which feed is correct, based on title and position
+      # Guess which feed is best based on the title
       elsif ($link->{title} =~ /(?i:feed|stream)/i) {
+
+	# This is more likely a comment feed
 	if ($link->{title} =~ /[ck]omment/i) {
 	  $link->{pref} = 1;
 	}
+
+	# This may be the correct feed
 	else {
 	  $link->{pref} = 3;
 	};
       }
 
+      # Don't know ...
       else {
 	$link->{pref} = 2;
       };
@@ -378,6 +394,7 @@ sub _discover_sort_links {
     } values @$alternate);
   };
 
+  # Maybe empty ... maybe not
   return ($topic, $hub);
 };
 
@@ -388,69 +405,104 @@ sub discover {
   my $self = shift;
   my $c = shift;
 
-  my $base = Mojo::URL->new(shift());
+  # Get uri
+  my $base = Mojo::URL->new( shift );
 
-  my $name = __PACKAGE__ . ' v' . $VERSION;
-
+  # Initialize UserAgent
   my $ua = Mojo::UserAgent->new(
     max_redirects => 3,
-    name => $name
+    name => $UA_NAME
   );
 
+  # Retrieve resource
   my $tx = $ua->get($base);
 
+  # Initialize variables
   my ($hub, $topic, $nbase, $ntopic);
 
   if ($tx->success) {
+
+    # Change base after possible redirects
+    $base = $tx->req->url;
+
+    # Get response
     my $res = $tx->res;
 
+    # Check sorted header links
     ($topic, $hub) = _discover_sort_links(
       _discover_header_links($res->headers)
     );
 
+    # Fine
     goto STOPDISCOVERY if $topic && $hub;
 
+    # Check sorted dom links
     ($topic, $hub) = _discover_sort_links(
       _discover_dom_links($res->dom)
     );
 
+    # Fine
     goto STOPDISCOVERY if ($topic && $hub) || !$topic;
 
+    # Initialize new UserAgent
     $ua = Mojo::UserAgent->new(
       max_redirects => 3,
-      name => $name
+      name => $UA_NAME
     );
 
+    # Set new base base
     $nbase = Mojo::URL->new($topic->{href});
 
+    # Retrieve resource
     $tx = $ua->get($nbase);
 
+    # Request was successful
     if ($tx->success) {
+
+      # Change nbase after possible redirects
+      $nbase = $tx->req->url;
+
+      # Get response
       $res = $tx->res;
 
+      # Check sorted header links
       ($ntopic, $hub) = _discover_sort_links(
 	_discover_header_links($res->headers)
       );
 
+      # Fine
       goto STOPDISCOVERY if $topic && $hub;
 
+      # Check sorted dom links
       ($ntopic, $hub) = _discover_sort_links(
 	_discover_dom_links($res->dom)
       );
+    }
+
+    # Reset nbase as no connection occurred
+    else {
+      $nbase = undef;
     };
   };
 
+  # All requests are finished
+
  STOPDISCOVERY:
 
-  $hub = Mojo::URL->new($hub->{href})->base( $nbase || $base ) if $hub;
+  # Make relative path for topics and hubs absolute
+  $hub = Mojo::URL->new($hub->{href})->base( $nbase || $base )->to_abs if $hub;
 
+  # New topic is set
   if ($ntopic) {
-    $topic = Mojo::URL->new($ntopic->{href})->base($nbase);
+    $topic = Mojo::URL->new($ntopic->{href})->base($nbase)->to_abs;
   }
+
+  # Old topic is set
   elsif ($topic) {
-    $topic = Mojo::URL->new($topic->{href})->base($base);
+    $topic = Mojo::URL->new($topic->{href})->base($base)->to_abs;
   };
 
+  # Return
   return ($topic, $hub);
 };
 
@@ -512,7 +564,7 @@ sub _change_subscription {
   # Get user agent
   my $ua = Mojo::UserAgent->new(
     max_redirects => 3,
-    name => __PACKAGE__ . ' v' . $VERSION
+    name => $UA_NAME
   );
 
   # Send subscription change to hub
@@ -823,9 +875,10 @@ FAIL
 
 # Create challenge string
 sub _challenge {
+  state $l = scalar @CHALLENGE_CHARS;
   my $chal = '';
   for (1 .. $_[0] || 8) {
-    $chal .= $challenge_chars[ int( rand( @challenge_chars ) ) ];
+    $chal .= $CHALLENGE_CHARS[ int( rand( $l ) ) ];
   };
   return $chal;
 };

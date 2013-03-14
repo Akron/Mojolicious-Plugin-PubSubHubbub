@@ -2,6 +2,7 @@ blib
 log
 sandbox
 Sandbox
+examples/*.sqlite
 public
 todo.org
 script*
