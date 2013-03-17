@@ -10,8 +10,9 @@ our $VERSION = '0.03';
 
 use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
-# Todo: - Test with http://push-pub.appspot.com/
-#       - Make everything async
+# Todo:
+# - Test with http://push-pub.appspot.com/
+# - Make everything async
 
 
 # Default lease seconds before automatic subscription refreshing
@@ -25,6 +26,7 @@ my @CHALLENGE_CHARS = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
 my $FEED_TYPE_RE   = qr{^(?i:application/(atom|r(?:ss|df))\+xml)};
 my $FEED_ENDING_RE = qr{(?i:\.(r(?:ss|df)|atom))$};
 
+# User Agent Name
 my $UA_NAME = __PACKAGE__ . ' v' . $VERSION;
 
 
@@ -1020,7 +1022,7 @@ Defaults to 7 days.
   $r->route('/:user/callback_url')->pubsub;
 
 Define the callback endpoint for your subscriptions.
-Establishes a L<Mojolicious::Plugin::Util::Endpoint>
+Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint>
 called C<pubsub-callback>.
 
 
@@ -1063,12 +1065,12 @@ C<lease_seconds>, C<secret>, C<verify_token>, and C<callback>.
 Additional parameters are ignored but can be accessed in the hooks.
 If no C<verify_token> is given, it is automatically generated.
 If no C<callback> is given, the route callback is used.
-If no C<lease_seconds> is given, the subscription will
-not automatically terminate.
-If a C<secret> is given, it must be unique for every 'callback'
-and 'hub' combination to allow for bulk distribution.
+If no C<lease_seconds> is given, the subscription won't
+automatically terminate.
+If a C<secret> is given, it must be unique for every C<callback>
+and C<hub> combination to allow for bulk distribution.
 
-The method returns a C<true> value on success and a false value
+The method returns a C<true> value on success and a C<false> value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
@@ -1085,7 +1087,8 @@ Unsubscribe from a topic.
 
 Relevant parameters are C<hub>, C<secret>, and C<verify_token>.
 Additional parameters are ignored but can be accessed in the hooks.
-The method returns a true value on success and a false value
+
+The method returns a C<true> value on success and a C<false> value
 if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
