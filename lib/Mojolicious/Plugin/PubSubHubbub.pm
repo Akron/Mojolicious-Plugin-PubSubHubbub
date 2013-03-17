@@ -15,7 +15,7 @@ use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
 
 # Default lease seconds before automatic subscription refreshing
-has 'lease_seconds' => ( 30 * 24 * 60 * 60 );
+has 'lease_seconds' => ( 7 * 24 * 60 * 60 );
 has hub => 'http://pubsubhubbub.appspot.com/';
 
 
@@ -1009,7 +1009,7 @@ but this B<may change without warnings!>
 Seconds a subscription is valid by default before auto refresh
 is enabled.
 
-Defaults to 30 days.
+Defaults to 7 days.
 
 
 =head1 SHORTCUTS

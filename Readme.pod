@@ -117,7 +117,7 @@ but this B<may change without warnings!>
 Seconds a subscription is valid by default before auto refresh
 is enabled.
 
-Defaults to 30 days.
+Defaults to 7 days.
 
 
 =head1 SHORTCUTS

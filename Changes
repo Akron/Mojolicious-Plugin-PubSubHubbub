@@ -1,5 +1,8 @@
 0.03-2013-03-14
 	- Added discovery.
+	- Improved example script.
+	- Changed default lease seconds to 7 days,
+	  as appspot has a maximum of 10 days.
 
 0.02 2013-03-12
         - Changed 'on_pubsub_acceptance' hook
