@@ -57,10 +57,10 @@ sub register {
   # Set hub attribute
   if ($param->{hub}) {
     $plugin->hub($param->{hub});
-
-    # Establish an endpoint
-    $mojo->endpoint('pubsub-hub' => $param->{hub});
   };
+
+  # Establish an endpoint
+  $mojo->endpoint('pubsub-hub' => $plugin->hub);
 
   # Set lease_seconds attribute
   if ($param->{lease_seconds}) {
