@@ -438,9 +438,11 @@ sub discover {
     # Fine
     goto STOPDISCOVERY if $topic && $hub;
 
+    my $dom = $res->dom;
+
     # Check sorted dom links
     ($topic, $hub) = _discover_sort_links(
-      _discover_dom_links($res->dom)
+      _discover_dom_links($dom)
     );
 
     # Fine

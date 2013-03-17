@@ -1,8 +1,4 @@
 #!/usr/bin/env perl
-
-# Todo: Add simple Blogging-Tool!
-# Use XML::Loy!
-
 use File::Basename 'dirname';
 use File::Spec;
 BEGIN {
@@ -40,6 +36,17 @@ unless (-e $file) {
 # Create database handler helper
 helper dbh => sub {
   state $dbi = DBI->connect("dbi:SQLite:dbname=" . $file, "", "");
+};
+
+helper own_entries => sub {
+  my $c = shift;
+  return $c->dbh->selectall_arrayref(<<'ENTRIES', { Slice => {} });
+SELECT *
+FROM PubSub_content
+WHERE internal = 1
+ORDER BY updated DESC
+LIMIT 20 OFFSET 0
+ENTRIES
 };
 
 
@@ -122,6 +129,7 @@ app->callback(pubsub_verify => sub {
   # Get subsrciption
   my $subscr = $dbh->selectrow_hashref(
     'SELECT FROM PubSub WHERE topic = ? AND mode = ? AND verify_token = ?',
+    {Slice => {} },
     @{$params}{qw/topic mode verify_token/}
   );
 
@@ -170,6 +178,7 @@ app->callback(pubsub_verify => sub {
 
 
 # How to handle the newly arrived content?
+# Todo: Make this a unifying plugin
 hook on_pubsub_content => sub {
   my ($c, $type, $dom) = @_;
 
@@ -364,11 +373,31 @@ ORDER BY updated DESC
 LIMIT 20 OFFSET 0
 ENTRIES
 
+  my $own_entries = $c->own_entries;
+
   # Todo: Get latest entries
   $c->render(
     template => 'index',
     entries  => $entries,
+    own_entries => $own_entries,
     subscriptions => $subscriptions
+  );
+};
+
+get '/entry/:id' => [id => qr/\d+/] => sub {
+  my $c   = shift;
+  my $id  = $c->stash('id');
+  my $dbh = $c->dbh;
+
+  my $entry = $dbh->selectrow_hashref(
+    'SELECT * FROM PubSub_content WHERE internal = 1 AND id = ?',
+    { Slice => {} },
+    $id
+  );
+
+  $c->render(
+    template => 'entry',
+    entry => $entry
   );
 };
 
@@ -377,22 +406,18 @@ get '/topic/:id' => [id => qr/\d+/] => sub {
   my $id  = $c->stash('id');
   my $dbh = $c->dbh;
 
-  my ($topic) = $dbh->selectrow_array(
-    'SELECT topic FROM PubSub WHERE id = ?', [$id]
-  );
+  my $entries = $dbh->selectall_arrayref(
+'SELECT * FROM PubSub_content.*, PubSub.id AS topic_id
+WHERE PubSub.topic = PubSub_content.topic AND PubSub.id = ?
+ORDER BY updated DESC LIMIT 10', [$id], { Slice => {} });
 
   # Show topic
-  if ($topic) {
-
-    my $entries = $dbh->selectall_arrayref(
-'SELECT * FROM PubSub_content WHERE topic = ?
-ORDER BY updated DESC LIMIT 10', [$topic], { Slice => {} });
-
+  if (@$entries) {
     return $c->render(
       template => 'topic',
       topic_id => $id,
       entries  => $entries,
-      topic    => $topic
+      topic    => $entries->[0]->{topic}
     );
   };
 
@@ -408,8 +433,8 @@ get '/unsubscribe/:id' => [id => qr/\d+/] => sub {
   my $feed = $dbh->selectrow_arrayref(
     'SELECT topic, mode, hub, secret, verify_token ' .
       'FROM PubSub WHERE id = ?',
-    [$id],
-    { Slice => {} }
+    { Slice => {} },
+    $id
   );
 
   if ($feed) {
@@ -492,13 +517,55 @@ post '/entry' => sub {
 
   my $dbh = $c->dbh;
 
-  my $author = $c->param('author');
-  my $title  = $c->param('title');
-  my $entry  = $c->param('entry');
+  my $author  = $c->param('author');
+  my $title   = $c->param('title');
+  my $content = $c->param('content');
 
-#  $dbh->prepare('INSERT INTO PubSub_content');
+  if ($author && $title && $content) {
 
-  $c->flash(message => 'You posted a new entry');
+    $dbh->begin_work;
+
+    my $sth = $dbh->prepare(<<'CONTENT');
+INSERT INTO PubSub_content (author, title, content, topic, updated, internal)
+VALUES (?, ?, ?, ?, ?, 1)
+CONTENT
+
+    my $topic = $c->url_for('feed')->to_abs;
+
+    if ($sth && $sth->execute($author, $title, $content, $topic, time)) {
+      my $id = $dbh->last_insert_id(undef, undef, undef, undef);
+      my $guid = $c->url_for->to_abs . '/' . $id;
+      $sth = $dbh->prepare(<<'GUID');
+UPDATE PubSub_content SET guid = ?, link = ?
+GUID
+
+      if ($guid && $sth && $sth->execute($guid, $guid)) {
+	$dbh->commit;
+
+	$c->flash(message => 'You posted a new entry');
+	$title = undef;
+	$content = undef;
+      }
+
+      else {
+	$c->flash(message => 'Failed to post new entry - please retry');
+	$dbh->rollback;
+      };
+    }
+    else {
+      $c->flash(message => 'Failed to post new entry - please retry');
+      $dbh->rollback;
+    };
+  }
+
+  else {
+    $c->flash(message => 'Please define author, title and content');
+  };
+
+  $c->flash(author => $author)   if $author;
+  $c->flash(title => $title)     if $title;
+  $c->flash(content => $content) if $content;
+  return $c->redirect_to('/');
 };
 
 get '/discover' => sub {
@@ -515,23 +582,30 @@ get '/discover' => sub {
   return $c->redirect_to('/');
 };
 
+
+
 get '/feed' => sub {
   my $c = shift;
   my $atom = XML::Loy::Atom->new('feed');
   $atom->link(self => $c->url_for('feed')->to_abs);
   $atom->link(hub => $c->endpoint('pubsub-hub'));
 
-  foreach (qw/1 2 3/) {
+  my $own_entries = $c->own_entries;
+
+  foreach my $own (@$own_entries) {
     my $entry = $atom->entry(
-      id => 'a' . $_,
+      id => $own->{guid}
     );
     for ($entry) {
-      $_->author(
-	name => 'Nils'
-      );
-      $_->title('Bazinga');
-      $_->published(time);
-      $_->content('Hello World!');
+      $_->author(name => $own->{author});
+      $_->title($own->{title});
+      $_->published($own->{time});
+      $_->content($own->{content});
+      $_->link(
+	rel => 'alternate',
+	href => $own->{link},
+	type => 'text/html'
+      )
     };
   };
 
@@ -626,9 +700,24 @@ __DATA__
   </head>
   <body>
     <h1><%= $title %></h1>
-<%== content %>
+%== content
   </body>
 </html>
+
+@@ article.html.ep
+<article>
+  <h2><a href="<%= $entry->{link} || '#' %>"><%= $entry->{title} %></a></h2>
+
+% my $date = $entry->{updated} ?
+%    XML::Loy::Date::RFC3339->new($entry->{updated})->to_string : '';
+
+  <p class="byline">von <%= $entry->{author} %>, <%= $date %></p>
+  <p><%= text_shorten($entry->{content}, 200) %></p>
+% if ($entry->{topic_id}) {
+  <p>Topic: <a href="/topic/<%= $entry->{topic_id} %>"><%= $entry->{topic} || 'Unknown' %></a></p>
+% };
+</article>
+
 
 @@ index.html.ep
 % layout 'index', title => 'PubSubHubbub';
@@ -689,51 +778,42 @@ __DATA__
 </ul>
 % };
 
-% if (@$content) {
+% if (@$entries) {
 <h2>Content</h2>
-% foreach my $entry ( @$content ) {
-<article>
-  <h2><a href="<%= $entry->{link} || '#' %>"><%= $entry->{title} %></a></h2>
-
-% my $date = $entry->{updated} ?
-%    XML::Loy::Date::RFC3339->new($entry->{updated})->to_string : '';
-
-  <p class="byline">von <%= $entry->{author} %>, <%= $date %></p>
-  <p><%= text_shorten($entry->{content}, 200) %></p>
-  <p>Topic: <a href="/topic/<%= $entry->{topic_id} %>"><%= $entry->{topic} || 'Unknown' %></a></p>
-</article>
-% };
+%   foreach my $entry ( @$entries ) {
+%= include 'article', entry => $entry
+%   };
 % };
 
 </div>
 <div id="right"><h2>New post</h2>
 
-<form method="post" action="/post">
+<form method="post" action="/entry">
 % foreach (qw/author title/) {
   <label for="<%= $_ %>"><%= ucfirst $_ %></label>
   <input type="text" name="<%= $_ %>" value="<%= flash $_ %>" /><br />
 % }
-  <textarea name="entry"><%= flash 'entry' %></textarea>
+  <textarea name="content"><%= flash 'content' %></textarea>
+  <input type="submit" value="Post" />
 </form>
+
+% foreach my $entry ( @$own_entries ) {
+%= include 'article', entry => $entry
+% };
 
 </div>
 
 @@ topic.html.ep
 % my $content = stash('entries') || [];
-% my $topic   = stash('topic')   || 'Unknown';
 % layout 'index', title => 'Show ' . $topic;
 
 % foreach my $entry ( @$content ) {
-<article>
-  <h2><a href="<%= $entry->{link} || '#' %>"><%= $entry->{title} %></a></h2>
-  <p class="byline">von <%= $entry->{author} %>,
-% my $date = $entry->{updated} ?
-%    XML::Loy::Date::RFC3339->new($entry->{updated})->to_string : '';
-
-    $date</p>
-  <p><%= text_shorten($entry->{content}, 200) %></p>
-</article>
+%= include 'article', entry => $entry
 % };
+
+@@ entry.html.ep
+% layout 'index', title => 'Show ' . $entry->{guid};
+%= include 'article', entry => $entry
 
 
 @@ styles.css.ep
