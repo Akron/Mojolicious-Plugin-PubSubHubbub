@@ -411,6 +411,8 @@ get '/entry/:id' => [id => qr/\d+/] => sub {
     $id
   );
 
+  return $c->render_not_found unless $entry;
+
   $c->render(
     template => 'entry',
     entry => $entry
@@ -425,10 +427,10 @@ get '/topic/:id' => [id => qr/\d+/] => sub {
   my $entries = $dbh->selectall_arrayref(
 'SELECT * FROM PubSub_content.*, PubSub.id AS topic_id
 WHERE PubSub.topic = PubSub_content.topic AND PubSub.id = ?
-ORDER BY updated DESC LIMIT 10', [$id], { Slice => {} });
+ORDER BY updated DESC LIMIT 10', { Slice => {} }, $id);
 
   # Show topic
-  if (@$entries) {
+  if ($entries && @$entries >= 1) {
     return $c->render(
       template => 'topic',
       topic_id => $id,
@@ -530,6 +532,55 @@ sub _subscribe {
 post '/' => \&_subscribe;
 get '/subscribe' => \&_subscribe;
 
+
+get '/discover' => sub {
+  my $c = shift;
+  my $uri = $c->param('uri');
+  return $c->render_not_found unless $uri;
+
+  my ($topic, $hub) = $c->pubsub_discover($uri);
+
+  $c->flash(hub => $hub) if $hub;
+  $c->flash(topic => $topic) if $topic;
+  $c->flash(uri => $uri);
+
+  return $c->redirect_to('index');
+} => 'discover';
+
+# Get feed
+get '/feed' => sub {
+  my $c = shift;
+  my $atom = XML::Loy::Atom->new('feed');
+  $atom->link(self => $c->url_for('feed')->to_abs);
+  $atom->link(hub => $c->endpoint('pubsub-hub'));
+
+  my $own_entries = $c->own_entries;
+
+  foreach my $own (@$own_entries) {
+    my $entry = $atom->entry(
+      id => $own->{guid}
+    );
+    for ($entry) {
+      $_->author(name => $own->{author});
+      $_->title($own->{title});
+      $_->updated($own->{updated});
+      $_->content($own->{content});
+      $_->link(
+	rel => 'alternate',
+	href => $own->{link},
+	type => 'text/html'
+      )
+    };
+  };
+
+  $c->render(data => $atom->to_pretty_xml);
+  $c->res->headers->content_type($atom->mime);
+
+  return;
+} => 'feed';
+
+
+# Post new entry
 post '/entry' => sub {
   my $c = shift;
 
@@ -554,10 +605,10 @@ CONTENT
       my $id = $dbh->last_insert_id(undef, undef, undef, undef);
       my $guid = $c->url_for->to_abs . '/' . $id;
       $sth = $dbh->prepare(<<'GUID');
-UPDATE PubSub_content SET guid = ?, link = ?
+UPDATE PubSub_content SET guid = ?, link = ? WHERE id = ?
 GUID
 
-      if ($guid && $sth && $sth->execute($guid, $guid)) {
+      if ($guid && $sth && $sth->execute($guid, $guid, $id)) {
 	$dbh->commit;
 
 	$c->flash(message => 'You posted a new entry');
@@ -587,58 +638,13 @@ GUID
 } => 'entry';
 
 
-get '/discover' => sub {
-  my $c = shift;
-  my $uri = $c->param('uri');
-  return $c->render_not_found unless $uri;
-
-  my ($topic, $hub) = $c->pubsub_discover($uri);
-
-  $c->flash(hub => $hub) if $hub;
-  $c->flash(topic => $topic) if $topic;
-  $c->flash(uri => $uri);
-
-  return $c->redirect_to('index');
-} => 'discover';
-
-
-
-get '/feed' => sub {
-  my $c = shift;
-  my $atom = XML::Loy::Atom->new('feed');
-  $atom->link(self => $c->url_for('feed')->to_abs);
-  $atom->link(hub => $c->endpoint('pubsub-hub'));
-
-  my $own_entries = $c->own_entries;
-
-  foreach my $own (@$own_entries) {
-    my $entry = $atom->entry(
-      id => $own->{guid}
-    );
-    for ($entry) {
-      $_->author(name => $own->{author});
-      $_->title($own->{title});
-      $_->published($own->{time});
-      $_->content($own->{content});
-      $_->link(
-	rel => 'alternate',
-	href => $own->{link},
-	type => 'text/html'
-      )
-    };
-  };
-
-  $c->render(data => $atom->to_pretty_xml);
-  $c->res->headers->content_type($atom->mime);
-  return;
-} => 'feed';
-
 
 get '/css/styles' => sub {
   shift->render(
     template => 'styles',
     format => 'css'
 )} => 'styles';
+
 
 #######################
 # Initialize Database #

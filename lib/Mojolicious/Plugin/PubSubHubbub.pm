@@ -149,7 +149,7 @@ sub publish {
 
   # No response
   unless ($res) {
-    $c->app->log->debug('Cannot ping hub - maybe no SSL support')
+    $c->app->log->error('Cannot ping hub - maybe no SSL support')
       if index($plugin->hub, 'https') == 0;
     return;
   };
@@ -520,7 +520,7 @@ sub _change_subscription {
   # Get callback endpoint
   # Works only if endpoints provided
   unless ($param{callback} = $c->endpoint('pubsub-callback')) {
-    $c->app->log->warn('You have to specify a callback endpoint.');
+    $c->app->log->error('You have to specify a callback endpoint.');
   };
 
   # No topic or hub url given
@@ -578,7 +578,7 @@ sub _change_subscription {
 
   # No response
   unless ($tx->success && $res) {
-    $mojo->log->debug('Cannot ping hub - maybe no SSL support installed?')
+    $mojo->log->error('Cannot ping hub - maybe no SSL support')
       if index($param{hub}, 'https') == 0;
     return;
   };
@@ -619,7 +619,7 @@ sub callback {
 
   # Unsupported content type
   else {
-    $mojo->log->debug("Unsupported media type: $ct");
+    $mojo->log->error("Unsupported media type: $ct");
     return _render_fail($c);
   };
 
@@ -653,7 +653,7 @@ sub callback {
     # Unable to verify secret
     unless ( _check_signature( $c, $secret )) {
 
-      $mojo->log->debug(
+      $mojo->log->error(
 	'Unable to verify secret for ' . join('; ', @$topics)
       );
 
@@ -1262,7 +1262,7 @@ This hook can be used to store unsubscription information.
       };
 
       return;
-    });
+o    });
 
 This hook is released, after an unsubscription request is sent to a hub
 and the response is processed.
