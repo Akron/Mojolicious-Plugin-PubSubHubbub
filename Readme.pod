@@ -139,7 +139,9 @@ called C<pubsub-callback>.
   # In Controllers
   my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
 
-Heuristically discover a topic feed and a hub based on a URI.
+Discover a topic feed and a hub based on a URI.
+
+B<Note:> The heuristic implementation may change without warnings.
 
 
 =head2 pubsub_publish

@@ -16,6 +16,8 @@ use XML::Loy::Date::RFC822;
 
 my $DC_NS = 'http://purl.org/dc/elements/1.1/';
 
+app->mode('development');
+
 # Several namespaces for RSS
 my $RSS_NS_RE =
   qr{^http://
@@ -325,17 +327,26 @@ sub _store_subscription {
 
   my $dbh = $c->dbh;
 
+  $c->app->log->error('Update subscription ' . $sql);
+
   my $sth = $dbh->prepare($sql);
 
-  return unless $sth;
+  unless ($sth) {
+    $c->app->log->error('Unable to prepare ' . $sql);
+    return;
+  };
 
-  unless ($dbh->execute(@values)) {
-    $sth = $dbh->prepare(
-      'INSERT INTO PubSub (' .
-	join(',', @first, @second) . ') VALUES (' . ('?' x 7) . ')'
-      );
-    unless ($dbh->execute(@values)) {
-      app->log->warn('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
+  unless ($sth->execute(@values) >= 1) {
+
+    $sql = 'INSERT INTO PubSub (' .
+	join(',', @first, @second) . ') VALUES (' . join(',', ('?') x 9) . ')';
+
+    $c->app->log->error('Insert subscription ' . $sql);
+
+    $sth = $dbh->prepare($sql);
+
+    unless ($sth->execute(@values)) {
+      $c->app->log->error('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
     };
   };
   return;
@@ -345,6 +356,11 @@ sub _store_subscription {
 # Unified event for subscription and unsubscribing
 hook before_pubsub_subscribe => \&_store_subscription;
 
+
+hook after_pubsub_subscribe => sub {
+  my $c = shift;
+  $c->app->log->error('Successful subscribed');
+};
 
 # Unified event for subscription and unsubscribing
 hook before_pubsub_unsubscribe => \&_store_subscription;
@@ -382,7 +398,7 @@ ENTRIES
     own_entries => $own_entries,
     subscriptions => $subscriptions
   );
-};
+} => 'index';
 
 get '/entry/:id' => [id => qr/\d+/] => sub {
   my $c   = shift;
@@ -423,7 +439,7 @@ ORDER BY updated DESC LIMIT 10', [$id], { Slice => {} });
 
   # Topic unknown
   return $c->render_not_found;
-};
+} => 'topic';
 
 get '/unsubscribe/:id' => [id => qr/\d+/] => sub {
   my $c = shift;
@@ -460,8 +476,8 @@ get '/unsubscribe/:id' => [id => qr/\d+/] => sub {
     $c->flash(message => 'You did not subscribe to that feed.');
   };
 
-  return $c->redirect_to('/');
-};
+  return $c->redirect_to('index');
+} => 'unsubscribe';
 
 
 # Subscribe to new feed
@@ -483,7 +499,7 @@ sub _subscribe {
     );
 
     # Retry
-    return $c->redirect_to('/');
+    return $c->redirect_to('index');
   };
 
   # Create new parameter hash
@@ -502,11 +518,13 @@ sub _subscribe {
 
   # Failed to subscribe to new feed
   else {
-    $c->flash(message => 'Unable to subscribe to ' . $topic);
+    $c->flash(message => 'Unable to subscribe to ' . $topic . ':' . $hub);
   };
 
+  # Todo: Update stored database
+
   # Redirect
-  return $c->redirect_to('/');
+  return $c->redirect_to('index');
 };
 
 post '/' => \&_subscribe;
@@ -565,8 +583,9 @@ GUID
   $c->flash(author => $author)   if $author;
   $c->flash(title => $title)     if $title;
   $c->flash(content => $content) if $content;
-  return $c->redirect_to('/');
-};
+  return $c->redirect_to('index');
+} => 'entry';
+
 
 get '/discover' => sub {
   my $c = shift;
@@ -579,8 +598,8 @@ get '/discover' => sub {
   $c->flash(topic => $topic) if $topic;
   $c->flash(uri => $uri);
 
-  return $c->redirect_to('/');
-};
+  return $c->redirect_to('index');
+} => 'discover';
 
 
 
@@ -614,7 +633,12 @@ get '/feed' => sub {
   return;
 } => 'feed';
 
-get '/css/styles' => [format => 'css'] => 'styles';
+
+get '/css/styles' => sub {
+  shift->render(
+    template => 'styles',
+    format => 'css'
+)} => 'styles';
 
 #######################
 # Initialize Database #
@@ -679,6 +703,7 @@ sub _init_db {
   $dbh->commit and return 1;
 };
 
+
 app->helper(
   text_shorten => sub {
     my $c      = shift;
@@ -686,6 +711,7 @@ app->helper(
     my $length = shift || 200;
     return substr($text, 0, $length);
   });
+
 
 app->start;
 
@@ -696,7 +722,7 @@ __DATA__
 <html>
   <head>
     <title><%= $title %></title>
-%= stylesheet '/css/styles.css'
+%= stylesheet url_for 'styles'
   </head>
   <body>
     <h1><%= $title %></h1>
@@ -714,7 +740,7 @@ __DATA__
   <p class="byline">von <%= $entry->{author} %>, <%= $date %></p>
   <p><%= text_shorten($entry->{content}, 200) %></p>
 % if ($entry->{topic_id}) {
-  <p>Topic: <a href="/topic/<%= $entry->{topic_id} %>"><%= $entry->{topic} || 'Unknown' %></a></p>
+  <p>Topic: <a href="<%= url_for 'topic', id =>  $entry->{topic_id} %>"><%= $entry->{topic} || 'Unknown' %></a></p>
 % };
 </article>
 
@@ -735,14 +761,16 @@ __DATA__
 
 <div id="left"><h2>New Subscription</h2>
 
-<form method="get" action="/discover">
+<p>Hub: <%= endpoint 'pubsub-hub' %>, CB: <%= endpoint 'pubsub-callback' %></p>
+
+<form method="get" action="<%= url_for 'discover' %>">
   <input type="text" name="uri" id="uri" value="<%= flash('uri') %>" />
   <input type="submit" value="Discover" />
 </form>
 
 <br />
 
-<form method="post" action="/">
+<form method="post" action="<%= url_for 'index' %>">
 % foreach (qw/topic hub secret/) {
   <label for="<%= $_ %>"><%= ucfirst($_) %></label>
   <input type="text" name="<%= $_ %>" id="<%= $_ %>" value="<%= flash($_) %>" />
@@ -762,7 +790,7 @@ __DATA__
   <% } else { %>
   <li>
   <% } %>
-    <a href="/topic/<%= $sub->{id} %>"><%= $sub->{topic} %></a>
+    <a href="<%= url_for 'topic', id => $sub->{id} %>"><%= $sub->{topic} %></a>
     <% if ($sub->{pending} || $sub->{mode} eq 'unsubscribe') { %>
 %     my %new_param =  (topic => $sub->{topic},
 %                       hub   => $sub->{hub});
@@ -771,7 +799,7 @@ __DATA__
 %     $url->query( %new_param );
     <a href="<%= $url %>">resubscribe</a>
     <% } else { %>
-    <a href="/unsubscribe/<%= $sub->{id} %>">unsubscribe</a>
+    <a href="<%= url_for 'unsubscribe', id => $sub->{id} %>">unsubscribe</a>
     <% } %>
   </li>
 % };
@@ -788,7 +816,7 @@ __DATA__
 </div>
 <div id="right"><h2>New post</h2>
 
-<form method="post" action="/entry">
+<form method="post" action="<%= url_for 'entry' %>">
 % foreach (qw/author title/) {
   <label for="<%= $_ %>"><%= ucfirst $_ %></label>
   <input type="text" name="<%= $_ %>" value="<%= flash $_ %>" /><br />

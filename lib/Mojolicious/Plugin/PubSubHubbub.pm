@@ -572,14 +572,18 @@ sub _change_subscription {
   );
 
   # Send subscription change to hub
-  my $res = $ua->post($param{hub} => form => \%post)->res;
+  my $tx = $ua->post($param{hub} => form => \%post);
+
+  my $res = $tx->res if $tx->success;
 
   # No response
-  unless ($res) {
+  unless ($tx->success && $res) {
     $mojo->log->debug('Cannot ping hub - maybe no SSL support installed?')
-      if index($plugin->hub, 'https') == 0;
+      if index($param{hub}, 'https') == 0;
     return;
   };
+
+  my $res = $tx->res;
 
   $mojo->plugins->emit_hook(
     "after_pubsub_$mode" => (
@@ -1035,7 +1039,9 @@ called C<pubsub-callback>.
   # In Controllers
   my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
 
-Heuristically discover a topic feed and a hub based on a URI.
+Discover a topic feed and a hub based on a URI.
+
+B<Note:> The heuristic implementation may change without warnings.
 
 
 =head2 pubsub_publish

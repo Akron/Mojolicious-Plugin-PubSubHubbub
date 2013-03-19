@@ -216,6 +216,8 @@ is($topic->{href}, 'http://sojolicio.us/feed.atom', 'Found topic');
 is($hub->{href}, 'http://pubsubhubbub.appspot.com/', 'Found hub');
 
 # No test
-# ($topic, $hub) = $app->pubsub_discover('http://spiegel.de/');
+# ($topic, $hub) = $app->pubsub_discover('http://...');
+# diag $topic;
+# diag $hub;
 
 done_testing;
