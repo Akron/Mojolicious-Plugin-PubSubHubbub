@@ -309,6 +309,8 @@ hook on_pubsub_content => sub {
 sub _store_subscription {
   my ($c, $param, $post) = @_;
 
+  my $log = $c->app->log;
+
   my %cond;
 
   my @first  = qw(hub lease_seconds secret verify_token mode pending started);
@@ -327,12 +329,12 @@ sub _store_subscription {
 
   my $dbh = $c->dbh;
 
-  $c->app->log->error('Update subscription ' . $sql);
+  $log->error('Update subscription ' . $sql);
 
   my $sth = $dbh->prepare($sql);
 
   unless ($sth) {
-    $c->app->log->error('Unable to prepare ' . $sql);
+    $log->error('Unable to prepare ' . $sql);
     return;
   };
 
@@ -341,12 +343,12 @@ sub _store_subscription {
     $sql = 'INSERT INTO PubSub (' .
 	join(',', @first, @second) . ') VALUES (' . join(',', ('?') x 9) . ')';
 
-    $c->app->log->error('Insert subscription ' . $sql);
+    $log->error('Insert subscription ' . $sql);
 
     $sth = $dbh->prepare($sql);
 
     unless ($sth->execute(@values)) {
-      $c->app->log->error('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
+      $log->error('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
     };
   };
   return;
@@ -357,9 +359,13 @@ sub _store_subscription {
 hook before_pubsub_subscribe => \&_store_subscription;
 
 
-hook after_pubsub_subscribe => sub {
-  my $c = shift;
-  $c->app->log->error('Successful subscribed');
+foreach my $mode (qw/subscribe unsubscribe/) {
+  hook 'after_pubsub_' . $mode => sub {
+    my ($c, $hub, $param, $code, $body) = shift;
+    my $log = $c->app->log;
+    $log->error("Successfully ${mode}d to $hub with ". $c->dumper($param));
+    $log->error("Response: $code\n$body");
+  };
 };
 
 # Unified event for subscription and unsubscribing

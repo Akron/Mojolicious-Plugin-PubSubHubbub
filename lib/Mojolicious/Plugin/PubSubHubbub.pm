@@ -1,7 +1,5 @@
 package Mojolicious::Plugin::PubSubHubbub;
 use Mojo::Base 'Mojolicious::Plugin';
-use strict;
-use warnings;
 use Mojo::UserAgent;
 use Mojo::DOM;
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
@@ -520,13 +518,14 @@ sub _change_subscription {
   # Get callback endpoint
   # Works only if endpoints provided
   unless ($param{callback} = $c->endpoint('pubsub-callback')) {
-    $c->app->log->error('You have to specify a callback endpoint.');
+    $c->app->log->error('You have to specify a callback endpoint');
   };
 
   # No topic or hub url given
   unless (exists $param{topic} &&
 	    $param{topic} =~ m{^https?://}i &&
 	      exists $param{hub}) {
+      $c->app->log->error('You have to specify a topic and a hub');
     return;
   };
 
@@ -578,16 +577,15 @@ sub _change_subscription {
 
   # No response
   unless ($tx->success && $res) {
-    $mojo->log->error('Cannot ping hub - maybe no SSL support')
-      if index($param{hub}, 'https') == 0;
+    my $msg = 'Cannot ping hub';
+    $msg .= ' - maybe no SSL support' if index($param{hub}, 'https') == 0;
+    $mojo->log->error($msg);
     return;
   };
 
-  my $res = $tx->res;
-
   $mojo->plugins->emit_hook(
     "after_pubsub_$mode" => (
-      $c, \%param, $res->code, $res->body
+      $c, $param{hub}, \%post, $res->code, $res->body
     ));
 
   # is 2xx, incl. 204 aka successful and 202 aka accepted
@@ -1216,7 +1214,7 @@ a secret value.
 
   $mojo->hook(
     after_pubsub_subscribe => sub {
-      my ($c, $params, $status, $body) = @_;
+      my ($c, $hub, $params, $status, $body) = @_;
       if ($status !~ /^2/) {
         warn 'Error: ', $body;
       };
@@ -1227,7 +1225,8 @@ a secret value.
 This hook is released, after a subscription request is sent to a hub
 and the response is processed.
 The parameters include the current controller object,
-the parameters for subscription as a Hash reference, the response status,
+the hub location,
+the parameters sent for subscription as a Hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 
@@ -1256,18 +1255,19 @@ This hook can be used to store unsubscription information.
 
   $mojo->hook(
     after_pubsub_unsubscribe => sub {
-      my ($c, $params, $status, $body) = @_;
+      my ($c, $hub, $params, $status, $body) = @_;
       if ($status !~ /^2/) {
         warn 'Error: ', $body;
       };
 
       return;
-o    });
+    });
 
 This hook is released, after an unsubscription request is sent to a hub
 and the response is processed.
 The parameters include the current controller object,
-the parameters for unsubscription as a Hash reference, the response status,
+the hub location,
+the parameters sent for unsubscription as a Hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 

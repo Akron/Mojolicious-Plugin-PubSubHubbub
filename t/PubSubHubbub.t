@@ -375,18 +375,18 @@ $app->hook(
 
 $app->hook(
   'after_pubsub_subscribe' => sub {
-    my ($c, $params, $code, $body) = @_;
+    my ($c, $hub, $params, $code, $body) = @_;
 
     # First request
     if ($request_count == 1) {
-      my $topic = $params->{topic};
+      my $topic = $params->{'hub.topic'};
       is($topic, 'http://sojolicio.us/blog.xml', 'Topic to subscribe B');
       is($body, 'okay', 'Response body');
     }
 
     # Second request
     elsif ($request_count == 2) {
-      my $topic = $params->{topic};
+      my $topic = $params->{'hub.topic'};
       is($topic, 'http://sojolicio.us/blog/unknown.xml', 'Topic to subscribe C');
       is($body, 'not_okay', 'Response body');
     };
@@ -405,18 +405,18 @@ $app->hook(
 
 $app->hook(
   'after_pubsub_unsubscribe' => sub {
-    my ($c, $params, $code, $body) = @_;
+    my ($c, $hub, $params, $code, $body) = @_;
 
     # Third request
     if ($request_count == 3) {
-      my $topic = $params->{topic};
+      my $topic = $params->{'hub.topic'};
       is($topic, 'http://sojolicio.us/blog.xml', 'Topic to unsubscribe');
       is($body, 'okay', 'Response body');
     }
 
     # Second request
     elsif ($request_count == 4) {
-      my $topic = $params->{topic};
+      my $topic = $params->{'hub.topic'};
       is($topic, 'http://sojolicio.us/blog/unknown.xml', 'Topic to subscribe');
       is($body, 'not_okay', 'Response body');
     };
