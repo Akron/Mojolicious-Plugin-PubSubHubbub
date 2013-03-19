@@ -767,7 +767,7 @@ __DATA__
 
 <div id="left"><h2>New Subscription</h2>
 
-<p>Hub: <%= endpoint 'pubsub-hub' %>, CB: <%= endpoint 'pubsub-callback' %></p>
+<p>Hub: <a href="<%= endpoint 'pubsub-hub' %>"><%= endpoint 'pubsub-hub' %></a>, CB: <a href="<%= endpoint 'pubsub-callback' %>"><%= endpoint 'pubsub-callback' %></a></p>
 
 <form method="get" action="<%= url_for 'discover' %>">
   <input type="text" name="uri" id="uri" value="<%= flash('uri') %>" />
