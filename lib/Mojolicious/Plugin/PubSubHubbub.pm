@@ -1316,7 +1316,7 @@ and needs to be accessible from the web.
 
 =begin html
 
-<div style="margin: 0 auto;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
+<div style="text-align: center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
 
 =end html
 
