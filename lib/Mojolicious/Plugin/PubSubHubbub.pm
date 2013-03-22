@@ -919,7 +919,7 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe to PubSubHubbub
+Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe with PubSubHubbub
 
 
 =head1 SYNOPSIS

@@ -5,14 +5,17 @@ use warnings;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-  VERSION_FROM => 'lib/Mojolicious/Plugin/PubSubHubbub.pm',
   NAME         => 'Mojolicious::Plugin::PubSubHubbub',
   AUTHOR       => 'Nils Diewald',
+  ABSTRACT     => 'Publish and Subscribe with PubSubHubbub',
+  VERSION_FROM => 'lib/Mojolicious/Plugin/PubSubHubbub.pm',
+  BUILD_REQUIRES => {
+    'Test::More' => 0
+  },
   PREREQ_PM => {
     'Mojolicious' => 3.43,
     'Mojolicious::Plugin::Util::Endpoint' => 0.12,
-    'Mojolicious::Plugin::Util::Callback' => 0.02,
-    'Test::More' => 0
+    'Mojolicious::Plugin::Util::Callback' => 0.02
   },
   LICENSE      => 'perl',
   META_MERGE   => {
@@ -22,5 +25,6 @@ WriteMakefile(
       repository  => 'https://github.com/Akron/Mojolicious-Plugin-PubSubHubbub'
     }
   },
-  test => {TESTS => 't/*.t t/*/*.t t/*/*/*.t t/*/*/*/*.t'}
+  MIN_PERL_VERSION => '5.010001',
+  test => {TESTS => 't/*.t'}
 );
