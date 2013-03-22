@@ -1,9 +1,10 @@
-0.04 2013-03-21
+0.04 2013-03-22
         - Fixed base bug in discovery.
 	- Fixed bug in encoding.
 	- Made example app working in real world.
 	- Don't use constants.
 	- Improve documentation.
+	- Change lease seconds default to 9 days.
 
 0.03 2013-03-14
 	- Added discovery.

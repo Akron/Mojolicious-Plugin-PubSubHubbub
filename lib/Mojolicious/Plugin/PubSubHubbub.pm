@@ -13,7 +13,7 @@ our $VERSION = '0.04';
 
 
 # Default lease seconds before automatic subscription refreshing
-has 'lease_seconds' => ( 7 * 24 * 60 * 60 );
+has 'lease_seconds' => ( 9 * 24 * 60 * 60 );
 has hub => 'http://pubsubhubbub.appspot.com/';
 
 
@@ -1001,9 +1001,11 @@ but this may change without notification.
   $ps->lease_seconds(100 * 24 * 60 * 60);
 
 Seconds a subscription is valid by default before auto refresh
-is enabled.
+is enabled. You can not rely on auto refresh by the hub -
+your subscriber should resubscribe automatically, if the hub
+does not ask for renewal.
 
-Defaults to 7 days.
+Defaults to 9 days.
 
 
 =head1 METHODS

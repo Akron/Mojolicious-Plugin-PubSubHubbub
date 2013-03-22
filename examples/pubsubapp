@@ -20,6 +20,10 @@
 # -------------------------------------
 # Copyright (C) 2011-2013, Nils Diewald
 # http://nils-diewald.de/
+# -------------------------------------
+#
+# Todo: Implement auto-refresh function
+#
 
 use strict;
 use warnings;
@@ -480,6 +484,11 @@ if (app->log->level eq 'debug') {
       };
     };
   };
+
+  hook before_dispatch => sub {
+    my $c = shift;
+    $c->app->log->debug('Requesting: ' . $c->req->url->to_abs);
+  }
 };
 
 
