@@ -218,11 +218,12 @@ sub _strip_html {
     s!<a\s+[^\>]*?href=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?>(.+?)</a>!\{\{$2\}\{$3\}\}!gi;
     s!<(p|em|strong|i|u)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
     s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
-    s/<[^>]+?>//g;
+    s/<[^>]+?>/ /g;
+    s!\{\{([^\}]+?)\}\{\s*\}\}!!g;
     s!\{\{([^\}]+?)\}\{([^\}]+?)\}\}!<a href="$1">$2</a>!g;
     s/\{\{([^\}]+?)\}\}/<$1>/gi;
   };
-  return $string;
+  return b($string)->squish;
 };
 
 
@@ -400,7 +401,7 @@ hook on_pubsub_content => sub {
       $dbh->rollback and return;
     }
 
-    # Update was not successfull
+    # Update was not successful
     elsif ($update < 1) {
 
       # Insert
@@ -446,7 +447,7 @@ sub _store_subscription {
     return;
   };
 
-  # Execution not successfull
+  # Execution not successful
   unless ($sth->execute(@values) >= 1) {
 
     # Insert Subscription SQL
@@ -456,7 +457,7 @@ sub _store_subscription {
     # Prepare statement
     $sth = $dbh->prepare($sql);
 
-    # Execution not successfull
+    # Execution not successful
     unless ($sth->execute(@values)) {
       $log->warn('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
     };
@@ -739,13 +740,13 @@ get '/atom' => sub {
       $_->author(name => $own->{author});
 
       # Set title
-      $_->title($own->{title});
+      $_->title(html => $own->{title});
 
       # Set updated date
       $_->updated($own->{updated});
 
       # Set content
-      $_->content($own->{content});
+      $_->content(html => $own->{content});
 
       # Set alternate representation link
       $_->link(

@@ -7,8 +7,6 @@ use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
 our $VERSION = '0.04';
 
-use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
-
 # Todo:
 # - Make everything async
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
@@ -752,6 +750,9 @@ sub _find_topics {
 
 # Add topic to entries
 sub _add_topics {
+  state $atom_ns = 'http://www.w3.org/2005/Atom';
+
+
   my ($type, $dom, $self_href) = @_;
 
   my $link = qq{<link rel="self" href="$self_href" />};
@@ -765,14 +766,14 @@ sub _add_topics {
       # Sources are found
       if (my $sources = $entry->find('source')) {
 	foreach my $s (@$sources) {
-	  $source = $s and last if $s->namespace eq ATOM_NS;
+	  $source = $s and last if $s->namespace eq $atom_ns;
 	};
       };
 
       # No source found
       unless ($source) {
-	$source = $entry->append_content('<source xmlns="' . ATOM_NS . '" />')
-	  ->at('source[xmlns=' . ATOM_NS . ']');
+	$source = $entry->append_content(qq{<source xmlns="$atom_ns" />})
+	  ->at(qq{source[xmlns="$atom_ns"]});
       }
 
       # Link already there
@@ -1022,7 +1023,7 @@ The preferred hub. Currently local hubs are not supported.
 Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
 
 Defaults to L<pubsubhubbub.appspot.com|http://pubsubhubbub.appspot.com/>,
-but this B<may change without warnings!>
+but this may change without notification.
 
 
 =head2 lease_seconds
@@ -1056,8 +1057,7 @@ called C<pubsub-callback>.
   my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
 
 Discover a topic feed and a hub based on a URI.
-
-B<Note:> The heuristic implementation may change without warnings.
+The discovery heuristics may change without notification.
 
 
 =head2 pubsub_publish
@@ -1070,17 +1070,19 @@ B<Note:> The heuristic implementation may change without warnings.
   );
 
 Publish a list of feeds in terms of a notification to the hub.
-Supports named routes, relative paths and absolute URIs.
+Supports endpoints, named routes, relative paths and absolute URIs.
 
 
 =head2 pubsub_subscribe
 
   # In Controllers
-  $c->pubsub_subscribe(
+  if ($c->pubsub_subscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us' );
     lease_seconds => 123456
-  );
+  )) {
+    print 'You successfully subscribed!';
+  };
 
 Subscribe to a topic.
 
@@ -1102,15 +1104,19 @@ hub's response message body is returned additionally.
 =head2 pubsub_unsubscribe
 
   # In Controllers
-  $c->pubsub_unsubscribe(
+  if ($c->pubsub_unsubscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us'
-  );
+  )) {
+    print 'You successfully unsubscribed!';
+  };
 
 Unsubscribe from a topic.
 
-Relevant parameters are C<hub>, C<secret>, and C<verify_token>.
+Relevant parameters are C<hub>, C<secret>, C<verify_token>, and C<callback>.
 Additional parameters are ignored but can be accessed in the hooks.
+If no C<verify_token> is given, it is automatically generated.
+If no C<callback> is given, the route callback is used.
 
 The method returns a C<true> value on success and a C<false> value
 if an error occured. If called in an array context, the
@@ -1170,9 +1176,9 @@ helper or on registration.
       return;
     });
 
-This callback is released, when a verification is requested. The parameters
-include the current controller object and the parameters
-of the verification request as a hash reference.
+This callback is released, when a verification is requested.
+The parameters include the current controller object and the parameters
+of the verification request as a hash reference (without C<hub.>-prefix).
 If verification is granted, this callback must return a true value.
 
 The callback can be established with the
@@ -1200,10 +1206,10 @@ helper or on registration.
 This hook is released, when desired (i.e., verified and optionally
 filtered) content arrives.
 The parameters include the current
-controller object, the content type, and the - maybe topic
-filtered - content as a L<Mojo::DOM> object.
+controller object, the content type (either C<atom> or C<rss>),
+and the - maybe topic filtered - content as a L<Mojo::DOM> object.
 
-B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
+The L<Mojo::DOM> object is canonicalized in a way that each
 entry in the feed (either RSS or Atom) includes its topic in the C<href>
 of C<source E<gt> link[rel="self"]>.
 
@@ -1222,10 +1228,10 @@ of C<source E<gt> link[rel="self"]>.
 
 This hook is released, before a subscription request is sent to a hub.
 The parameters include the current controller object,
-the parameters for subscription as a Hash reference and the C<POST>
-string as a string ref.
+the parameters prepared for subscription as a hash reference and the C<POST>
+string as a string reference.
 This hook can be used to store subscription information and establish
-a secret value.
+a secret.
 
 
 =head2 after_pubsub_subscribe
@@ -1244,7 +1250,7 @@ This hook is released, after a subscription request is sent to a hub
 and the response is processed.
 The parameters include the current controller object,
 the hub location,
-the parameters sent for subscription as a Hash reference, the response status,
+the parameters sent for subscription as a hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 
@@ -1264,8 +1270,8 @@ This hook can be used to deal with errors.
 This hook is released, before an unsubscription request is sent
 to a hub.
 The parameters include the current controller object,
-the parameters for unsubscription as a Hash reference and the C<POST>
-string as a string ref.
+the parameters prepared for unsubscription as a hash reference and the C<POST>
+string as a string reference.
 This hook can be used to store unsubscription information.
 
 
@@ -1285,21 +1291,32 @@ This hook is released, after an unsubscription request is sent to a hub
 and the response is processed.
 The parameters include the current controller object,
 the hub location,
-the parameters sent for unsubscription as a Hash reference, the response status,
+the parameters sent for unsubscription as a hash reference, the response status,
 and the response body.
 This hook can be used to deal with errors.
 
 
 =head1 EXAMPLE
 
-The C<examples/> folder contains a working example application with publishing,
+The C<examples/> folder contains a full working example application with publishing,
 subscription and discovery logic.
-The example depends on L<DBI>, L<DBD::SQLite> and L<XML::Loy> (at least v0.10).
+The example has additional dependencies of L<DBI>, L<DBD::SQLite> and
+L<XML::Loy> (at least v0.10).
 
 It can be started using the daemon, morbo or hypnotoad,
 and needs to be accessible from the web.
 
   $ perl examples/pubsubapp daemon
+
+This example may be a good starting point for your own implementation, especially,
+if you deal with the subscriber part.
+
+
+
+=head1 TODO
+
+Currently all methods are blocking. In an upcoming release all blocking
+methods will allow for non-blocking as well.
 
 
 =head1 DEPENDENCIES

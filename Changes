@@ -2,6 +2,7 @@
         - Fixed base bug in discovery.
 	- Fixed bug in encoding.
 	- Made example app working in real world.
+	- Don't use constants.
 
 0.03 2013-03-14
 	- Added discovery.
