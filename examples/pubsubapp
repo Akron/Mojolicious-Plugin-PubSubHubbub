@@ -1,4 +1,28 @@
 #!/usr/bin/env perl
+
+# This is a publisher/subscriber example application
+# for Mojolicious::Plugin::PubSubHubbub
+#
+# Prerequisites:
+#
+#  - XML::Loy (v0.10)
+#  - DBI
+#  - DBD::SQLite
+#
+# You can run the app by starting the server with
+#
+#  $ pubsubapp daemon
+#
+# or by using either morbo or hypnotoad.
+#
+# For debugging, please set mode and logging level below
+#
+# -------------------------------------
+# Copyright (C) 2011-2013, Nils Diewald
+# http://nils-diewald.de/
+
+use strict;
+use warnings;
 use File::Basename 'dirname';
 use File::Spec;
 BEGIN {
@@ -10,13 +34,19 @@ use Mojolicious::Lite;
 use Mojo::ByteStream 'b';
 use DBI;
 use DBD::SQLite;
+
+# For Stream generation and Date handling.
 use XML::Loy::Atom;
+
+# Be aware - these are experimental
 use XML::Loy::Date::RFC3339;
 use XML::Loy::Date::RFC822;
 
 my $DC_NS = 'http://purl.org/dc/elements/1.1/';
 
-app->mode('development');
+# Switch this for debugging
+# app->mode('development');
+# app->log->level('debug');
 
 # Several namespaces for RSS
 my $RSS_NS_RE =
@@ -27,7 +57,8 @@ my $RSS_NS_RE =
        purl\.org/(?:rss/1\.0/(?:modules/rss091)?|net/rss1\.1)
      )\#?$}x;
 
-# Maybe initialize the database
+
+# Initialize the database if it does not exist
 my $file = app->home . '/pubsub.sqlite';
 sub _init_file;
 unless (-e $file) {
@@ -37,26 +68,26 @@ unless (-e $file) {
 
 # Create database handler helper
 helper dbh => sub {
-  state $dbi = DBI->connect("dbi:SQLite:dbname=" . $file, "", "");
+  state $dbh = DBI->connect(
+    "dbi:SQLite:dbname=$file", '', '' => {
+      sqlite_unicode => 1
+    });
 };
 
+
+# Return internal entries
 helper own_entries => sub {
-  my $c = shift;
-  return $c->dbh->selectall_arrayref(<<'ENTRIES', { Slice => {} });
-SELECT *
-FROM PubSub_content
-WHERE internal = 1
-ORDER BY updated DESC
-LIMIT 20 OFFSET 0
+  return shift->dbh->selectall_arrayref(<<'ENTRIES', { Slice => {} });
+SELECT * FROM PubSub_content WHERE internal = 1 ORDER BY updated DESC LIMIT 20 OFFSET 0
 ENTRIES
 };
 
 
-# Register pubSubHubbub plugin
+# Register PubSubHubbub plugin
 plugin 'PubSubHubbub';
 
 
-# Add 'acceptance' callback
+# Add acceptance callback
 app->callback(pubsub_accept => sub {
   my ($c, $type, $topics) = @_;
 
@@ -78,6 +109,8 @@ WHERE
 SELECT_TOPICS
 
   my $dbh = $c->dbh;
+
+  # Start selection
   my $array = $dbh->selectall_arrayref($db_request);
 
   # Todo: Is the hub the one I subscribed to?
@@ -106,7 +139,7 @@ SELECT_TOPICS
 
       # Secret already given and mismatched for bulk
       elsif ($secret ne $_->[1]) {
-	$c->app->log->info(
+	$c->app->log->debug(
 	  "Hub for topics $topic_string expects " .
 	  'different secrets for bulk.');
 	next;
@@ -130,14 +163,21 @@ app->callback(pubsub_verify => sub {
 
   # Get subsrciption
   my $subscr = $dbh->selectrow_hashref(
-    'SELECT FROM PubSub WHERE topic = ? AND mode = ? AND verify_token = ?',
-    {Slice => {} },
+    'SELECT * FROM PubSub WHERE topic = ? AND mode = ? AND verify_token = ?',
+    { Slice => {} },
     @{$params}{qw/topic mode verify_token/}
   );
+
+  $c->app->log->debug(
+    'Found subscription with ' .
+      join(', ', @{$params}{qw/topic mode verify_token/}) .
+	' is ' . $c->dumper($subscr)
+      );
 
   # No subscription of this topic found
   return unless $subscr;
 
+  # Start transaction
   $dbh->begin_work;
 
   # Is subscription time over?
@@ -145,33 +185,23 @@ app->callback(pubsub_verify => sub {
 	(time > ($subscr->{started} + $subscr->{lease_seconds}))) {
 
     # Delete Subscription (Maybe too hard?)
-    unless ($dbh->do('DELETE FROM PubSub WHERE id = ?', $subscr->{id})) {
+    unless ($dbh->do('DELETE FROM PubSub WHERE id = ?', {}, $subscr->{id}) >= 1) {
       $dbh->rollback and return;
     };
   };
 
-  # If mode is subscribe and pending, update pending status
-
-  # Maybe
-  if ($subscr->{pending} && $subscr->{mode} eq 'subscribe') {
+  # If pending, update pending status
+  if ($subscr->{pending}) {
     unless ($dbh->do(
-      'UPDATE PubSub SET pending = 0 WHERE id = ?', $subscr->{id}
+      'UPDATE PubSub SET pending = 0 WHERE id = ?', {}, $subscr->{id}
     )) {
+
+      # Abort transaction
       $dbh->rollback and return;
     }
-  }
-
-  # If mode is unsubscribe, delete subscription
-  # Maybe this is wrong?
-  elsif ($subscr->{mode} eq 'unsubscribe') {
-
-    # Delete subscription
-    unless ($dbh->do('DELETE FROM PubSub WHERE id = ?', $subscr->{id})) {
-      $dbh->rollback and return;
-    };
   };
 
-  # Everything is fine
+  # Commit transaction
   $dbh->commit;
 
   # Verify subscription
@@ -179,13 +209,30 @@ app->callback(pubsub_verify => sub {
 });
 
 
+# Strip HTML - this is very simplified
+sub _strip_html {
+  my $string = shift;
+  for ($string) {
+    s/\{\{//g;
+    s/\}\}//g;
+    s!<a\s+[^\>]*?href=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?>(.+?)</a>!\{\{$2\}\{$3\}\}!gi;
+    s!<(p|em|strong|i|u)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
+    s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
+    s/<[^>]+?>//g;
+    s!\{\{(.+?)\}\{(.+?)\}\}!<a href="$1">$2</a>!g;
+    s/\{\{(.+?)\}\}/<$1>/gi;
+  };
+  return $string;
+};
+
+
 # How to handle the newly arrived content?
-# Todo: Make this a unifying plugin
 hook on_pubsub_content => sub {
   my ($c, $type, $dom) = @_;
 
   my (@feed, $author);
 
+  # Get feed creator
   my $elem = $dom->at('creator');
   if ($elem && $elem->namespace eq $DC_NS) {
     $author = $elem->all_text;
@@ -194,36 +241,68 @@ hook on_pubsub_content => sub {
   # Feed is Atom
   if ($type eq 'atom') {
 
+    # Get feed author
     $elem = $dom->at('author > name');
     my $author = $elem ? $elem->all_text : $author;
 
+    # Iterate through all entries
     $dom->find('entry')->each(
       sub {
 	my $entry = shift;
 
+	# Get topic
 	my %info = (
-	  topic => $entry->at('source > link[rel="self"]["href"]')->attrs('href')
+	  topic => $entry->at('source > link[rel="self"][href]')->attrs('href')
 	);
 
-	foreach (qw/title id updated content/) {
+	# Set guid
+	$elem = $entry->at('id');
+	$info{'guid'} = $elem ? $elem->all_text : '';
+
+	# Get title and content information
+	foreach (qw/title content/) {
 	  $elem = $entry->at($_);
-	  $_ = 'guid' if $_ eq 'id';
-	  $info{$_} = $elem ? $elem->all_text : '';
+	  my $content;
+	  if ($elem) {
+
+	    # xhtml content
+	    if ($elem->attrs('type') eq 'xhtml') {
+	      $content = $elem->to_xml;
+	    }
+
+	    # html or text content
+	    else {
+	      $content = $elem->all_text;
+	    }
+	  };
+
+	  # Strip html from content
+	  $info{$_} = _strip_html($content);
 	};
 
-	# $elem = $entry->at('author entry'); ???
+	# Get entry author
 	$elem = $entry->at('author');
-	$info{author} = $elem->all_text || $author;
+	$info{author} = $elem ? $elem->all_text : $author;
 
-	if ($info{updated}) {
-	  $info{updated} = XML::Loy::Date::RFC3339->new( $info{updated} )->epoch;
+	# Set link
+	my $link = $entry->at('link[rel="alternate"][href]');
+	$info{link} = $link->attrs('href') if $link;
+
+	# Set updated date
+	$elem = $entry->at('updated');
+	if ($elem) {
+	  $info{updated} = XML::Loy::Date::RFC3339->new( $elem->text )->epoch;
 	}
+
+	# Dublin core time
 	elsif ($elem = $entry->at('date') && $elem->namespace eq $DC_NS) {
-	  $info{updated} = XML::Loy::Date::RFC3339->new($elem->text)->epoch
+	  $info{updated} = XML::Loy::Date::RFC3339->new( $elem->text )->epoch
 	};
 
+	# Unknown - use current time
 	$info{updated} ||= time;
 
+	# Add info to feed
 	push(@feed, \%info);
       }
     );
@@ -232,36 +311,43 @@ hook on_pubsub_content => sub {
   # Feed is RSS
   elsif ($type eq 'rss') {
 
+    # Iterate through all items
     $dom->find('item')->each(
       sub {
 	my $entry = shift;
 
+	# Get topic
 	my %info = (
-	  topic => $entry->at('source > link[rel="self"]["href"]')->attrs('href')
+	  topic => $entry->at('source > link[rel="self"][href]')->attrs('href')
 	);
 
+	# Set title, guid, updated and content
 	foreach (qw/title guid pubDate description/) {
-	  $elem = $entry->at($_);
+	  my $p = $_;
+	  $elem = $entry->at($p);
 
 	  # Rename pubDate
-	  if ($_ eq 'pubDate') {
-	    $_ = 'updated';
+	  if ($p eq 'pubDate') {
+	    $p = 'updated';
 	  }
 
 	  # Rename description
-	  elsif ($_ eq 'description') {
-	    $_ = 'content';
+	  elsif ($p eq 'description') {
+	    $p = 'content';
 	  };
 
-	  $info{$_} = $elem ? $elem->all_text : '';
+	  # Set info
+	  $info{$p} = $elem ? _strip_html($elem->all_text) : '';
 	};
 
+	# Get author
 	$elem = $entry->at('author');
-	$info{author} = $elem->all_text || $author;
+	$info{author} = $elem ? $elem->all_text : $author;
 
-	# Check rdf:about
+	# Check rdf:about for a guid
 	$info{guid} //= $entry->attrs('rdf:about');
 
+	# Get link
 	my $link = $entry->at('link');
 	if ($link && (!$link->namespace || $link->namespace =~ $RSS_NS_RE)) {
 	  $info{link} = $link->text;
@@ -272,121 +358,159 @@ hook on_pubsub_content => sub {
 	  $info{updated} = XML::Loy::Date::RFC822->new( $info{updated} )->epoch;
 	}
 
+	# Dublin Core time
 	elsif ($elem = $entry->at('date') && $elem->namespace eq $DC_NS) {
 	  $info{updated} = XML::Loy::Date::RFC3339->new($elem->text)->epoch
 	};
 
+	# Add info to feed
 	push(@feed, \%info);
       });
   };
 
+  # Content is there
+  $c->app->log->debug("Insert or update content: \n". $c->dumper(\@feed));
+
   my $dbh = $c->dbh;
-  my $sth = $dbh->prepare(
+
+  # Prepare Update
+  my $sth_update = $dbh->prepare(
+    'UPDATE PubSub_content SET ' .
+      'author = ?, updated = ?, title = ?, content = ?, link = ? ' .
+        'WHERE guid = ? AND topic = ? AND internal = 0'
+  );
+
+  # Prepare Insert
+  my $sth_insert = $dbh->prepare(
     'INSERT INTO PubSub_content ' .
-      '(topic, author, updated, title, content, link, internal) ' .
+      '(topic, author, updated, title, content, link, guid, internal) ' .
 	'VALUES ' .
-	  '(?,?,?,?,?,?,0)'
+	  '(?,?,?,?,?,?,?,0)'
   );
 
   # Start transaction
   $dbh->begin_work;
 
-  # Todo: Do update_or_insert(PubSub_content => {} => {
-  #            guid => $guid, topic => $topic })
-  # If guid is given
-
   # Import all entries to database
   foreach my $entry (@feed) {
-    $sth->execute(@{$entry}{qw/topic author updated title content/});
+    my $update = $sth_update->execute(@{$entry}{qw/author updated title content link guid topic/});
+
+    # An error occured
+    unless ($update) {
+      $dbh->rollback and return;
+    }
+
+    # Update was not successfull
+    elsif ($update < 1) {
+
+      # Insert
+      unless ($sth_insert->execute(@{$entry}{qw/topic author updated title content link guid/})) {
+        $dbh->rollback and return;
+      };
+    };
   };
 
   # Commit insertions
   $dbh->commit;
+
+  return;
 };
 
 
-# before_pubsub_(un)?subscribe
+# Store subscription information before subscription or unsubscription
 sub _store_subscription {
   my ($c, $param, $post) = @_;
 
   my $log = $c->app->log;
 
-  my %cond;
+  my @keys = qw(hub lease_seconds secret verify_token mode pending started mode);
 
-  my @first  = qw(hub lease_seconds secret verify_token mode pending started);
-  my @second = qw(topic mode);
-
+  # Set pending and starting time
   $param->{pending} = 1;
   $param->{started} = time;
 
-  my @values = (@{$param}{@first}, @{$param}{@second});
-
-  my $sql =
-    'UPDATE PubSub SET ' .
-      join(', ', map { $_ . ' = ?' } @first) .
-	' WHERE ' .
-	  join(' AND ', map { $_ . ' = ?' } @second);
+  my @values = (@{$param}{@keys}, $param->{topic});
 
   my $dbh = $c->dbh;
 
-  $log->error('Update subscription ' . $sql);
+  # Update Subscription SQL
+  my $sql =
+    'UPDATE PubSub SET ' .
+      join(', ', map { $_ . ' = ?' } @keys) .
+	' WHERE topic = ?';
 
   my $sth = $dbh->prepare($sql);
 
   unless ($sth) {
-    $log->error('Unable to prepare ' . $sql);
-    return;
+    $log->warn('Unable to prepare ' . $sql) and return;
   };
 
+  # Execution not successfull
   unless ($sth->execute(@values) >= 1) {
 
+    # Insert Subscription SQL
     $sql = 'INSERT INTO PubSub (' .
-	join(',', @first, @second) . ') VALUES (' . join(',', ('?') x 9) . ')';
+	join(',', @keys, $param->{topic}) . ') VALUES (' . join(',', ('?') x 9) . ')';
 
-    $log->error('Insert subscription ' . $sql);
-
+    # Prepare statement
     $sth = $dbh->prepare($sql);
 
+    # Execution not successfull
     unless ($sth->execute(@values)) {
-      $log->error('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
+      $log->warn('Unable to ' . $param->{mode} . ' to ' . $param->{topic});
     };
   };
+
+  # Return
   return;
 };
 
 
-# Unified event for subscription and unsubscribing
-hook before_pubsub_subscribe => \&_store_subscription;
-
-
-foreach my $mode (qw/subscribe unsubscribe/) {
-  hook 'after_pubsub_' . $mode => sub {
-    my ($c, $hub, $param, $code, $body) = shift;
-    my $log = $c->app->log;
-    $log->error("Successfully ${mode}d to $hub with ". $c->dumper($param));
-    $log->error("Response: $code\n$body");
+# Debug unsubscription and subscription
+if (app->log->level eq 'debug') {
+  foreach my $mode (qw/subscribe unsubscribe/) {
+    hook 'after_pubsub_' . $mode => sub {
+      my ($c, $hub, $param, $code, $body) = @_;
+      for ($c->app->log) {
+	$_->debug("Successfully ${mode}d to $hub with ". $c->dumper($param));
+	$_->debug("Response: $code\n$body");
+      };
+    };
   };
 };
 
+
 # Unified event for subscription and unsubscribing
+hook before_pubsub_subscribe   => \&_store_subscription;
 hook before_pubsub_unsubscribe => \&_store_subscription;
 
 
-##############
-# Set routes #
-##############
+
+# ------
+# ROUTES
+# ------
+
+
+# Set PubSub shortcut
 (any '/ps-callback')->pubsub;
 
-# Show last content and subscription form
-get '/' => sub {
+
+# -----------------
+# SUBSCRIBER ROUTES
+# -----------------
+
+
+# Show last received content from subscription and subscription form
+get '/feeds' => sub {
   my $c = shift;
 
   my $dbh = $c->dbh;
 
-  my $subscriptions = $dbh->selectall_arrayref(<<'SUBS', { Slice => {} });
-SELECT * FROM PubSub
-SUBS
+  # Get subscriptions from database
+  my $subscriptions =
+    $dbh->selectall_arrayref('SELECT * FROM PubSub', { Slice => {} });
 
+  # Get latest entries
   my $entries = $dbh->selectall_arrayref(<<'ENTRIES', { Slice => {} });
 SELECT PubSub_content.*, PubSub.id as topic_id
 FROM PubSub_content, PubSub
@@ -395,47 +519,30 @@ ORDER BY updated DESC
 LIMIT 20 OFFSET 0
 ENTRIES
 
-  my $own_entries = $c->own_entries;
-
-  # Todo: Get latest entries
+  # Render page
   $c->render(
-    template => 'index',
-    entries  => $entries,
-    own_entries => $own_entries,
+    template      => 'feeds',
+    entries       => $entries,
     subscriptions => $subscriptions
   );
-} => 'index';
+} => 'feeds';
 
-get '/entry/:id' => [id => qr/\d+/] => sub {
-  my $c   = shift;
-  my $id  = $c->stash('id');
-  my $dbh = $c->dbh;
 
-  my $entry = $dbh->selectrow_hashref(
-    'SELECT * FROM PubSub_content WHERE internal = 1 AND id = ?',
-    { Slice => {} },
-    $id
-  );
-
-  return $c->render_not_found unless $entry;
-
-  $c->render(
-    template => 'entry',
-    entry => $entry
-  );
-};
-
+# Show topic
 get '/topic/:id' => [id => qr/\d+/] => sub {
   my $c   = shift;
   my $id  = $c->stash('id');
   my $dbh = $c->dbh;
 
-  my $entries = $dbh->selectall_arrayref(
-'SELECT * FROM PubSub_content.*, PubSub.id AS topic_id
+  # Get latest entries of topic
+  my $entries = $dbh->selectall_arrayref(<<'TOPICSELECT', { Slice => {} }, $id);
+SELECT PubSub_content.*, PubSub.id AS topic_id
+FROM PubSub_content, PubSub
 WHERE PubSub.topic = PubSub_content.topic AND PubSub.id = ?
-ORDER BY updated DESC LIMIT 10', { Slice => {} }, $id);
+ORDER BY updated DESC LIMIT 10
+TOPICSELECT
 
-  # Show topic
+  # Render topic
   if ($entries && @$entries >= 1) {
     return $c->render(
       template => 'topic',
@@ -449,51 +556,66 @@ ORDER BY updated DESC LIMIT 10', { Slice => {} }, $id);
   return $c->render_not_found;
 } => 'topic';
 
-get '/unsubscribe/:id' => [id => qr/\d+/] => sub {
+
+# Unsubscribe from topic
+get '/topic/:id/unsubscribe' => [id => qr/\d+/] => sub {
   my $c = shift;
   my $id   = $c->stash('id');
   my $dbh  = $c->dbh;
 
-  my $feed = $dbh->selectrow_arrayref(
-    'SELECT topic, mode, hub, secret, verify_token ' .
-      'FROM PubSub WHERE id = ?',
+  my $msg;
+
+  # Check if subscribed to topic
+  my $feed = $dbh->selectrow_hashref(
+    'SELECT topic, mode, hub, secret, verify_token FROM PubSub WHERE id = ?',
     { Slice => {} },
     $id
   );
 
+  # Topic is listed
   if ($feed) {
+
+    # Subscribed to topic
     if ($feed->{topic} && $feed->{mode} eq 'subscribe') {
 
+      # Delete mode information
       delete $feed->{mode};
 
+      # Unsubscription successful
       if ($c->pubsub_unsubscribe( %$feed )) {
-	$c->flash(message => 'You unsubscribed from ' . $feed->{topic});
+	$msg = 'You unsubscribed from ' . $feed->{topic};
       }
 
+      # Not successful
       else {
-	$c->flash(message => 'Unable to unsubscribe from ' . $feed->{topic});
+	$msg = 'Unable to unsubscribe from ' . $feed->{topic};
       };
     }
 
+    # Is not subscribed
     else {
-      $c->flash(message => 'You are not subscribe to that feed.');
+      $msg = 'You are not subscribe ' . $feed->{topic};
     };
   }
 
+  # Not subscribed to topic
   else {
-    $c->flash(message => 'You did not subscribe to that feed.');
+    $msg = 'You did not subscribe to that feed';
   };
 
-  return $c->redirect_to('index');
+  # Flash message
+  $c->flash(message => $msg);
+
+  return $c->redirect_to('feeds');
 } => 'unsubscribe';
 
 
-# Subscribe to new feed
-sub _subscribe {
+# Subscribe to new feed (post or get)
+any '/topic/subscribe' => sub {
   my $c = shift;
 
   my $hub    = $c->param('hub');
-  my $topic   = $c->param('topic');
+  my $topic  = $c->param('topic');
   my $secret = $c->param('secret');
 
   # Missing information
@@ -507,7 +629,7 @@ sub _subscribe {
     );
 
     # Retry
-    return $c->redirect_to('index');
+    return $c->redirect_to('feeds');
   };
 
   # Create new parameter hash
@@ -532,58 +654,142 @@ sub _subscribe {
   # Todo: Update stored database
 
   # Redirect
-  return $c->redirect_to('index');
-};
-
-post '/' => \&_subscribe;
-get '/subscribe' => \&_subscribe;
+  return $c->redirect_to('feeds');
+} => 'subscribe';
 
 
+# Discover topic and hub based on a uri
 get '/discover' => sub {
   my $c = shift;
   my $uri = $c->param('uri');
+
+  # No uri given
   return $c->render_not_found unless $uri;
 
+  # Discover uri
   my ($topic, $hub) = $c->pubsub_discover($uri);
 
-  $c->flash(hub => $hub) if $hub;
+  # Set information
+  $c->flash(hub   => $hub)   if $hub;
   $c->flash(topic => $topic) if $topic;
-  $c->flash(uri => $uri);
+  $c->flash(uri   => $uri);
 
-  return $c->redirect_to('index');
+  # Redirect to feeds
+  return $c->redirect_to('feeds');
 } => 'discover';
 
-# Get feed
-get '/feed' => sub {
+
+# ----------------
+# PUBLISHER ROUTES
+# ----------------
+
+
+# Show blog
+get '/' => sub {
   my $c = shift;
+
+  # Get internal entries
+  my $entries = $c->own_entries;
+
+  # Render latest entries
+  return $c->render(
+    template => 'blog',
+    entries  => $entries
+  );
+} => 'index';
+
+
+# Get atom feed
+get '/atom' => sub {
+  my $c = shift;
+
+  # Create new atom object
   my $atom = XML::Loy::Atom->new('feed');
-  $atom->link(self => $c->url_for('feed')->to_abs);
+
+  # Set charset
+  $atom->charset('UTF-8');
+
+  # Get this uri
+  my $self = $c->url_for('atom')->to_abs->to_string;
+
+  # Set self link
+  $atom->link(self => $self);
+  $atom->id($self);
+
+  # Set hub
   $atom->link(hub => $c->endpoint('pubsub-hub'));
 
+  # Set feed author (Unknown)
+  $atom->author(name => 'Unknown');
+
+  # Get internal entries
   my $own_entries = $c->own_entries;
 
+  # Create entries
   foreach my $own (@$own_entries) {
-    my $entry = $atom->entry(
-      id => $own->{guid}
-    );
+
+    # Create new entry
+    my $entry = $atom->entry( id => $own->{guid} );
+
+    # Set sub elements
     for ($entry) {
+
+      # Set author
       $_->author(name => $own->{author});
+
+      # Set title
       $_->title($own->{title});
+
+      # Set updated date
       $_->updated($own->{updated});
+
+      # Set content
       $_->content($own->{content});
+
+      # Set alternate representation link
       $_->link(
-	rel => 'alternate',
+	rel  => 'alternate',
 	href => $own->{link},
 	type => 'text/html'
       )
     };
   };
 
-  $c->render(data => $atom->to_pretty_xml);
+  # Encode data to utf-8
+  $atom = b($atom->to_pretty_xml)->encode->to_string;
+
+  # Render xml data
+  $c->render(data => $atom);
+
+  # Set mime type
   $c->res->headers->content_type($atom->mime);
 
   return;
-} => 'feed';
+} => 'atom';
+
+
+# Show entry
+get '/entry/:id' => [id => qr/\d+/] => sub {
+  my $c   = shift;
+  my $id  = $c->stash('id');
+  my $dbh = $c->dbh;
+
+  # Select entry information
+  my $entry = $dbh->selectrow_hashref(
+    'SELECT * FROM PubSub_content WHERE internal = 1 AND id = ?',
+    { Slice => {} },
+    $id
+  );
+
+  # Entry not found
+  return $c->render_not_found unless $entry;
+
+  # Render entry
+  return $c->render(
+    template => 'entry',
+    entry    => $entry
+  );
+};
 
 
 # Post new entry
@@ -592,74 +798,112 @@ post '/entry' => sub {
 
   my $dbh = $c->dbh;
 
+  # Get author, title and content
   my $author  = $c->param('author');
   my $title   = $c->param('title');
   my $content = $c->param('content');
 
+  # Everything is given
   if ($author && $title && $content) {
 
+    # Start transaction
     $dbh->begin_work;
 
+    # Prepare new entry insertion SQL
     my $sth = $dbh->prepare(<<'CONTENT');
 INSERT INTO PubSub_content (author, title, content, topic, updated, internal)
 VALUES (?, ?, ?, ?, ?, 1)
 CONTENT
 
-    my $topic = $c->url_for('feed')->to_abs;
+    # Get topic url
+    my $topic = $c->url_for('atom')->to_abs->to_string;
 
+    # Insertion was successful
     if ($sth && $sth->execute($author, $title, $content, $topic, time)) {
-      my $id = $dbh->last_insert_id(undef, undef, undef, undef);
-      my $guid = $c->url_for->to_abs . '/' . $id;
-      $sth = $dbh->prepare(<<'GUID');
-UPDATE PubSub_content SET guid = ?, link = ? WHERE id = ?
-GUID
 
+      # Get latest id for guid
+      my $id = $dbh->last_insert_id(undef, undef, undef, undef);
+
+      # Create unique guid
+      my $guid = $c->url_for->to_abs . '/' . $id;
+
+      # Prepare update SQL
+      $sth = $dbh->prepare('UPDATE PubSub_content SET guid = ?, link = ? WHERE id = ?');
+
+      # Update guid and link information
       if ($guid && $sth && $sth->execute($guid, $guid, $id)) {
+
+
+	# Successful transaction
 	$dbh->commit;
 
-	$c->flash(message => 'You posted a new entry');
-	$title = undef;
+	# Notify hub for new content
+	my $msg = 'You posted a new entry';
+	if ($c->pubsub_publish('atom')) {
+	  $msg .= ' and notified '. $c->endpoint('pubsub-hub') . ' about ' . $topic;
+	};
+
+	# Set flash message
+	$c->flash(message => $msg);
+
+	# Delete information not to be flashed
+	$title   = undef;
 	$content = undef;
       }
 
+      # Unable to update guid and link information
       else {
-	$c->flash(message => 'Failed to post new entry - please retry');
+	$c->flash(message => 'Unable to post new entry - please retry');
+
+	# Abort transaction
 	$dbh->rollback;
       };
     }
+
+    # Insertion was not successful
     else {
-      $c->flash(message => 'Failed to post new entry - please retry');
+      $c->flash(message => 'Unable to post new entry - please retry');
+
+      # Abort transaction
       $dbh->rollback;
     };
   }
 
+  # Information is missing
   else {
-    $c->flash(message => 'Please define author, title and content');
+    $c->flash(message => 'Unable to post new entry -pPlease define author, title and content');
   };
 
-  $c->flash(author => $author)   if $author;
-  $c->flash(title => $title)     if $title;
+  # Set flash information
+  $c->flash(author  => $author)  if $author;
+  $c->flash(title   => $title)   if $title;
   $c->flash(content => $content) if $content;
+
+  # Redirect
   return $c->redirect_to('index');
 } => 'entry';
 
 
-
-get '/css/styles' => sub {
-  shift->render(
-    template => 'styles',
-    format => 'css'
-)} => 'styles';
+# Set styles as a template (for reference)
+get '/styles' => sub { shift->render('styles')} => 'styles';
 
 
-#######################
-# Initialize Database #
-#######################
+# -------------------
+# INITIALIZE DATABASE
+# -------------------
+
+
+# Initialize database
 sub _init_db {
   my $file = shift;
 
-  my $dbh = DBI->connect("dbi:SQLite:dbname=$file", '', '');
+  # Get database handle
+  my $dbh = DBI->connect(
+    "dbi:SQLite:dbname=$file", '', '' => {
+      sqlite_unicode => 1
+    });
 
+  # Start transaction
   $dbh->begin_work;
 
   # Topic subscription
@@ -705,7 +949,8 @@ sub _init_db {
   # Content indices
   foreach (qw/guid updated/) {
     unless ($dbh->do(
-      "CREATE INDEX IF NOT EXISTS pubsub_content_${_}_i on PubSub_content (${_})"
+      "CREATE INDEX IF NOT EXISTS pubsub_content_${_}_i " .
+	"on PubSub_content (${_})"
     )) {
       $dbh->rollback and return;
     }
@@ -716,16 +961,9 @@ sub _init_db {
 };
 
 
-app->helper(
-  text_shorten => sub {
-    my $c      = shift;
-    my $text   = shift or return '';
-    my $length = shift || 200;
-    return substr($text, 0, $length);
-  });
-
-
+# Start application
 app->start;
+
 
 __DATA__
 
@@ -733,101 +971,139 @@ __DATA__
 <!doctype html>
 <html>
   <head>
+%= stylesheet "https://fonts.googleapis.com/css?family=Chivo:900"
+%= stylesheet "https://fonts.googleapis.com/css?family=Inconsolata:400"
+%= stylesheet "http://sojolicio.us/stylesheets/styles.css", media => "screen"
+%= stylesheet "http://sojolicio.us/stylesheets/prettify-mojo.css", media => "screen"
+%= stylesheet url_for 'styles', format => 'css'
+    <link rel="icon" href="http://sojolicio.us/images/favicon.ico" type="image/x-icon">
     <title><%= $title %></title>
-%= stylesheet url_for 'styles'
   </head>
   <body>
-    <h1><%= $title %></h1>
+
+%# Flash message
+% if (my $m = flash('message')) {
+<p style="color: <% if ($m =~ /unable/i) { %>red<% } else { %>green<% } %>"><%= $m %></p>
+% };
+    <div id="container">
+      <div id="logo"></div>
+      <a id="github-ribbon" href="https://github.com/Akron/Sojolicious">
+        <img src="https://s3.amazonaws.com/github/ribbons/forkme_right_orange_ff7600.png" alt="Fork me on GitHub">
+      </a>
+      <div class="inner">
+      <header>
+        <h1><%= $title %></h1>
+        <h3><%= stash('subtitle') || 'Sojolicious PubSubHubbub-Demo' %></h3>
+        <a href="<%= url_for 'index' %>">Blog</a> |
+        <a href="<%= url_for 'feeds' %>">Feeds</a>
+      </header>
+      <section>
 %== content
+      </section>
+    </div>
   </body>
 </html>
 
+
+
 @@ article.html.ep
 <article>
-  <h2><a href="<%= $entry->{link} || '#' %>"><%= $entry->{title} %></a></h2>
-
+% if ($entry->{link}) {
+  <h2><a href="<%= $entry->{link} %>"><%== $entry->{title} %></a></h2>
+% } else {
+  <h2><%== $entry->{title} %></h2>
+% };
+  <p class="byline">von
+% if ($entry->{topic}) {
+   <a href="<%= $entry->{topic} %>"><%= $entry->{author} || 'Feed' %></a>
+   [<a href="<%= url_for 'topic', id => $entry->{topic_id} %>">Internal</a>],
+% } else {
+   <%= $entry->{author} || 'Feed' %>,
+% };
 % my $date = $entry->{updated} ?
 %    XML::Loy::Date::RFC3339->new($entry->{updated})->to_string : '';
+   <%= $date %>
+  </p>
 
-  <p class="byline">von <%= $entry->{author} %>, <%= $date %></p>
-  <p><%= text_shorten($entry->{content}, 200) %></p>
-% if ($entry->{topic_id}) {
-  <p>Topic: <a href="<%= url_for 'topic', id =>  $entry->{topic_id} %>"><%= $entry->{topic} || 'Unknown' %></a></p>
-% };
+  <p><%== $entry->{content} %></p>
 </article>
 
 
-@@ index.html.ep
+
+@@ feeds.html.ep
 % layout 'index', title => 'PubSubHubbub';
 
 % my $subs = stash('subscriptions') || [];
 % my $content = stash('entries') || [];
 
-% if (my $m = flash('message')) {
-%   if ($m =~ /unable/i) {
-<p style="color: red"><%= $m %></p>
-%   } else {
-<p style="color: green"><%= $m %></p>
-%   };
-% };
+<h2>New Subscription</h2>
 
-<div id="left"><h2>New Subscription</h2>
+<p style="text-align: right;"><a href="<%= endpoint 'pubsub-hub' %>">Hub</a> |
+<a href="<%= endpoint 'pubsub-callback' %>">Callback</a></p>
 
-<p>Hub: <a href="<%= endpoint 'pubsub-hub' %>"><%= endpoint 'pubsub-hub' %></a>, CB: <a href="<%= endpoint 'pubsub-callback' %>"><%= endpoint 'pubsub-callback' %></a></p>
-
+%# Discovery
 <form method="get" action="<%= url_for 'discover' %>">
-  <input type="text" name="uri" id="uri" value="<%= flash('uri') %>" />
+  <input type="text" name="uri" id="uri" value="<%= flash 'uri' %>" />
   <input type="submit" value="Discover" />
 </form>
 
 <br />
 
-<form method="post" action="<%= url_for 'index' %>">
+%# New subscription
+<form method="post" action="<%= url_for 'subscribe' %>">
 % foreach (qw/topic hub secret/) {
   <label for="<%= $_ %>"><%= ucfirst($_) %></label>
-  <input type="text" name="<%= $_ %>" id="<%= $_ %>" value="<%= flash($_) %>" />
-  <br />
+  <input type="text" name="<%= $_ %>" id="<%= $_ %>" value="<%= flash($_) %>" /><% unless ($_ eq 'secret') { %><br /><% } %>
 % }
   <input type="submit" value="OK" />
 </form>
 
+%# Subscriptions
 % if (@$subs) {
 <h2>Subscriptions</h2>
 <ul id="subscriptions">
-% foreach my $sub ( @$subs ) {
-  <% if ($sub->{mode} eq 'unsubscribe') { %>
+%   foreach my $sub ( @$subs ) {
+%     if ($sub->{mode} eq 'unsubscribe') {
   <li class="unsubscribed">
-  <% } elsif ($sub->{pending}) { %>
+%     } elsif ($sub->{pending}) {
   <li class="pending">
-  <% } else { %>
+%     } else {
   <li>
-  <% } %>
-    <a href="<%= url_for 'topic', id => $sub->{id} %>"><%= $sub->{topic} %></a>
-    <% if ($sub->{pending} || $sub->{mode} eq 'unsubscribe') { %>
-%     my %new_param =  (topic => $sub->{topic},
-%                       hub   => $sub->{hub});
-%     $new_param{secret} = $sub->{secret} if $sub->{secret};
-%     my $url = url_for '/subscribe';
-%     $url->query( %new_param );
-    <a href="<%= $url %>">resubscribe</a>
-    <% } else { %>
-    <a href="<%= url_for 'unsubscribe', id => $sub->{id} %>">unsubscribe</a>
-    <% } %>
+%     }
+    <a class="sub-topic" href="<%= url_for 'topic', id => $sub->{id} %>"><%= $sub->{topic} %></a>
+%     if ($sub->{pending} || $sub->{mode} eq 'unsubscribe') {
+%       my %new_param =  (
+%         topic => $sub->{topic},
+%         hub   => $sub->{hub}
+%       );
+%       $new_param{secret} = $sub->{secret} if $sub->{secret};
+%       my $url = url_for('subscribe');
+%       $url->query( %new_param );
+    [<a href="<%= $url %>">resubscribe</a>]
+%     } else {
+    [<a href="<%= url_for 'unsubscribe', id => $sub->{id} %>">unsubscribe</a>]
+%     };
   </li>
-% };
+%   };
 </ul>
 % };
 
+%# Entries
 % if (@$entries) {
-<h2>Content</h2>
+<h2>Feed</h2>
 %   foreach my $entry ( @$entries ) {
-%= include 'article', entry => $entry
+  %= include 'article', entry => $entry
 %   };
 % };
 
-</div>
-<div id="right"><h2>New post</h2>
 
+
+@@ blog.html.ep
+% layout 'index', title => 'My Blog';
+
+<h2>New post</h2>
+
+%# New post
 <form method="post" action="<%= url_for 'entry' %>">
 % foreach (qw/author title/) {
   <label for="<%= $_ %>"><%= ucfirst $_ %></label>
@@ -837,97 +1113,89 @@ __DATA__
   <input type="submit" value="Post" />
 </form>
 
-% foreach my $entry ( @$own_entries ) {
-%= include 'article', entry => $entry
+%# Entries
+% if (@$entries) {
+<h2>Feed</h2>
+%   foreach my $entry ( @$entries ) {
+  %= include 'article', entry => $entry
+%   };
 % };
 
-</div>
+
 
 @@ topic.html.ep
+% layout 'index', title => 'Show Topic', subtitle => $topic;
+
 % my $content = stash('entries') || [];
-% layout 'index', title => 'Show ' . $topic;
 
 % foreach my $entry ( @$content ) {
-%= include 'article', entry => $entry
+  %= include 'article', entry => $entry
 % };
 
+
+
 @@ entry.html.ep
-% layout 'index', title => 'Show ' . $entry->{guid};
+% layout 'index', title => 'Show Entry', subtitle => $entry->{guid};
 %= include 'article', entry => $entry
+
 
 
 @@ styles.css.ep
-html {
-  height: 100%;
-  font-family: tahoma, verdana, arial;
-}
-
 ul#subscriptions {
   font-size: 80%;
-  margin: 2px;
-  border: 2px solid black;
-  background-color: #ffddff;
+  padding: 2em;
+  background-color: #e7e7e7;
 }
 
-ul#subscriptions li.pending {
-  background-color: #ddffdd;
+ul#subscriptions li {
+  padding: .2em;
 }
 
-ul#subscriptions li.unsubscribed {
-  background-color: #ff0000;
+ul#subscriptions li.pending a.sub-topic {
+  color: #ddffdd;
+}
+
+ul#subscriptions li.unsubscribed a.sub-topic {
+  color: #ff0000;
+  text-decoration: line-through;
+}
+
+h2 {
+  margin-top: 1em;
 }
 
 form {
   padding: .5em;
-}
-
-div#left form {
-  background-color: grey;
+  background-color: transparent;
 }
 
 input, textarea {
-  border: 1px solid black;
+  border: 2px solid #00A3BA;
+  background-color: #e7e7e7;
+  color: #444;
+  padding: .1em;
+  margin: .2em;
 }
 
 textarea {
-  width: 24em;
-  height: 20em;
-}
-
-div#left, div#right {
-  display: block;
-  width: 50%;
-}
-
-div#left {
-  float: right;
+  width: 100%;
+  height: 10em;
 }
 
 label {
   display: inline-block;
-  width: 5em;
+  width: 4em;
 }
 
 article {
   position: relative;
   background-color: white;
-
   margin: 12px auto 0px auto;
-
   max-width: 800px;
   min-width: 300px;
-
   padding: 0px 10px;
-
-  font-size: 11px;
-  line-height: 1.7em;
-  color: #333;
-
-  border: 2px solid #444;
+  border: 2px solid #00A3BA;
   border-radius: 10px;
-
-  box-shadow: 4px 4px 3px rgba(0, 0, 0, .6);
-
   text-align: justify;
   -moz-hyphen: auto;
   -webkit-hyphen: auto;
@@ -935,20 +1203,20 @@ article {
 }
 
 article h2 {
-  font-size: 15px;
+  font-size: 100%;
   margin-top: .3em;
   margin-bottom: 0;
   padding-bottom: 0;
-  border-bottom: 1px solid #777;
+  border-bottom: 2px solid #999;
 }
 
 article h2 a {
-  color: #000;
   text-decoration: none;
 }
 
 article p {
   margin: 0 20px 1.1em 10px;
+  line-height: 1.7em;
 }
 
 p.byline {
@@ -958,5 +1226,13 @@ p.byline {
 }
 
 p:last-child {
-   margin-bottom: .4em;
+  margin-bottom: .4em;
+}
+
+#github-ribbon img {
+  position: fixed;
+  top: 0;
+  right: 0;
+  border: 0;
+  z-index: 15;
 }

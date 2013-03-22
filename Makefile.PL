@@ -10,7 +10,7 @@ WriteMakefile(
   AUTHOR       => 'Nils Diewald',
   PREREQ_PM => {
     'Mojolicious' => 3.43,
-    'Mojolicious::Plugin::Util::Endpoint' => 0.10,
+    'Mojolicious::Plugin::Util::Endpoint' => 0.11,
     'Mojolicious::Plugin::Util::Callback' => 0.02,
     'Test::More' => 0
   },

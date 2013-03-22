@@ -2,15 +2,16 @@ package Mojolicious::Plugin::PubSubHubbub;
 use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::UserAgent;
 use Mojo::DOM;
+use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use constant ATOM_NS => 'http://www.w3.org/2005/Atom';
 
 # Todo:
-# - Test with http://push-pub.appspot.com/
 # - Make everything async
+# - Maybe allow something like ->feed_to_json (look at superfeedr)
 
 
 # Default lease seconds before automatic subscription refreshing
@@ -66,8 +67,6 @@ sub register {
   if ($param->{lease_seconds}) {
     $plugin->lease_seconds($param->{lease_seconds});
   };
-
-  # push (@{ $mojo->renderer->classes }, __PACKAGE__);
 
   # Add 'pubsub' shortcut
   $mojo->routes->add_shortcut(
@@ -143,12 +142,15 @@ sub publish {
   );
 
   # Post to hub
-  my $res = $ua->post( $plugin->hub => form => \%post )->res;
+  my $tx = $ua->post( $plugin->hub => form => \%post );
+
+  my $res = $tx->res if $tx->success;
 
   # No response
-  unless ($res) {
-    $c->app->log->error('Cannot ping hub - maybe no SSL support')
-      if index($plugin->hub, 'https') == 0;
+  unless ($tx->success && $res) {
+    my $msg = 'Cannot ping hub';
+    $msg .= ' - maybe no SSL support' if index($plugin->hub, 'https') == 0;
+    $c->app->log->warn($msg);
     return;
   };
 
@@ -186,6 +188,7 @@ sub verify {
       pubsub_verify => \%param
     );
 
+    # Render challenge
     return $c->render(
       'status' => 200,
       'format' => 'text',
@@ -402,11 +405,20 @@ sub _discover_sort_links {
 # Discover topic and hub based on an URI
 # That's a rather complex heuristic, but should gain good results
 sub discover {
-  my $self = shift;
+  my $plugin = shift;
   my $c = shift;
+
+  # No uri given
+  return () unless $_[0];
 
   # Get uri
   my $base = Mojo::URL->new( shift );
+
+  # No valid uri
+  return () unless $base;
+
+  # Set base to uri
+  $base->base($c->req->url);
 
   # Initialize UserAgent
   my $ua = Mojo::UserAgent->new(
@@ -453,7 +465,7 @@ sub discover {
     );
 
     # Set new base base
-    $nbase = Mojo::URL->new($topic->{href});
+    $nbase = Mojo::URL->new($topic->{href})->base($base)->to_abs;
 
     # Retrieve resource
     $tx = $ua->get($nbase);
@@ -515,18 +527,19 @@ sub _change_subscription {
   my $c      = shift;
   my %param  = @_;
 
+  my $log = $c->app->log;
+
   # Get callback endpoint
   # Works only if endpoints provided
-  unless ($param{callback} = $c->endpoint('pubsub-callback')) {
-    $c->app->log->error('You have to specify a callback endpoint');
+  unless ($param{callback} ||= $c->endpoint('pubsub-callback')) {
+    $log->error('You have to specify a callback endpoint') and return;
   };
 
   # No topic or hub url given
   unless (exists $param{topic} &&
 	    $param{topic} =~ m{^https?://}i &&
 	      exists $param{hub}) {
-      $c->app->log->error('You have to specify a topic and a hub');
-    return;
+    $log->warn('You have to specify a topic and a hub') and return;
   };
 
   my $mode = $param{mode};
@@ -579,7 +592,7 @@ sub _change_subscription {
   unless ($tx->success && $res) {
     my $msg = 'Cannot ping hub';
     $msg .= ' - maybe no SSL support' if index($param{hub}, 'https') == 0;
-    $mojo->log->error($msg);
+    $log->warn($msg);
     return;
   };
 
@@ -600,29 +613,31 @@ sub _change_subscription {
 sub callback {
   my $plugin = shift;
   my $c      = shift;
-  my $mojo   = $c->app;
+  my $log    = $c->app->log;
 
   my $ct = $c->req->headers->header('Content-Type') || 'unknown';
   my $type;
 
   # Is Atom
-  if ($ct eq 'application/atom+xml') {
+  if ($ct =~ m{^application/atom\+xml}) {
     $type = 'atom';
   }
 
   # Is RSS
-  elsif ($ct =~ m{^application/r(?:ss|df)\+xml$}) {
+  elsif ($ct =~ m{^application/r(?:ss|df)\+xml}) {
     $type = 'rss';
   }
 
   # Unsupported content type
   else {
-    $mojo->log->error("Unsupported media type: $ct");
+    $log->warn("Unsupported media type: $ct") if $c->req->body;
     return _render_fail($c);
   };
 
-  my $dom = Mojo::DOM->new(xml => 1);
-  $dom->parse($c->req->body);
+  my $dom = Mojo::DOM->new(xml => 1, charset => 'UTF-8');
+
+  # Parse fat ping
+  $dom->parse(b($c->req->body)->decode->to_string);
 
   # Find topics in Payload
   my $topics = _find_topics($type, $dom);
@@ -651,7 +666,7 @@ sub callback {
     # Unable to verify secret
     unless ( _check_signature( $c, $secret )) {
 
-      $mojo->log->error(
+      $log->debug(
 	'Unable to verify secret for ' . join('; ', @$topics)
       );
 
@@ -667,7 +682,7 @@ sub callback {
     $topics = _filter_topics($dom, $topics);
   };
 
-  $mojo->plugins->emit_hook(
+  $c->app->plugins->emit_hook(
     on_pubsub_content => $c, $type, $dom
   );
 
@@ -791,16 +806,18 @@ sub _filter_topics {
       my $l = shift;
       my $href = $l->attrs('href');
 
+      # entry is not allowed
       unless (exists $allowed{$href}) {
 	$l->parent->parent->replace('');
       }
 
+      # Entry is fine and found
       else {
 	$topics{$href} = 1;
       };
     });
 
-  return [ keys %topics ];
+  return [ sort keys %topics ];
 };
 
 
@@ -856,7 +873,7 @@ sub _render_fail {
   my $c = shift;
 
   my $fail =<<'FAIL';
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <title>PubSubHubbub Endpoint</title>
@@ -1272,9 +1289,19 @@ and the response body.
 This hook can be used to deal with errors.
 
 
+=head1 EXAMPLE
+
+The C<examples/> folder contains a working example application with publishing,
+subscription and discovery logic.
+The example depends on L<DBI>, L<DBD::SQLite> and L<XML::Loy> (at least v.0.10).
+It can be started using the daemon, but needs to be accessible from the web.
+
+  $ perl examples/pubsubapp daemon
+
+
 =head1 DEPENDENCIES
 
-L<Mojolicious>,
+L<Mojolicious> (best with SSL support),
 L<Mojolicious::Plugin::Util::Endpoint>,
 L<Mojolicious::Plugin::Util::Callback>.
 
