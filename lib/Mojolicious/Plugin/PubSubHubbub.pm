@@ -8,7 +8,7 @@ use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 our $VERSION = '0.04';
 
 # Todo:
-# - Make everything async
+# - Make everything async (top priority)
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
 
 
@@ -400,7 +400,7 @@ sub _discover_sort_links {
 };
 
 
-# Discover topic and hub based on an URI
+# Discover topic and hub based on a URI
 # That's a rather complex heuristic, but should gain good results
 sub discover {
   my $plugin = shift;
@@ -981,6 +981,31 @@ This plugin is data store agnostic.
 Please use this plugin by applying hooks and callbacks.
 
 
+=head1 ATTRIBUTES
+
+=head2 hub
+
+  $ps->hub('http://pubsubhubbub.appspot.com/');
+  my $hub = $ps->hub;
+
+The preferred hub. Currently local hubs are not supported.
+Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
+
+Defaults to L<pubsubhubbub.appspot.com|http://pubsubhubbub.appspot.com/>,
+but this may change without notification.
+
+
+=head2 lease_seconds
+
+  my $seconds = $ps->lease_seconds;
+  $ps->lease_seconds(100 * 24 * 60 * 60);
+
+Seconds a subscription is valid by default before auto refresh
+is enabled.
+
+Defaults to 7 days.
+
+
 =head1 METHODS
 
 =head2 register
@@ -1012,37 +1037,16 @@ All parameters can be set either on registration or
 as part of the configuration file with the key C<PubSubHubbub>.
 
 
-=head1 ATTRIBUTES
-
-=head2 hub
-
-  $ps->hub('http://pubsubhubbub.appspot.com/');
-  my $hub = $ps->hub;
-
-The preferred hub. Currently local hubs are not supported.
-Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint> called C<pubsub-hub>.
-
-Defaults to L<pubsubhubbub.appspot.com|http://pubsubhubbub.appspot.com/>,
-but this may change without notification.
-
-
-=head2 lease_seconds
-
-  my $seconds = $ps->lease_seconds;
-  $ps->lease_seconds(100 * 24 * 60 * 60);
-
-Seconds a subscription is valid by default before auto refresh
-is enabled.
-
-Defaults to 7 days.
-
-
 =head1 SHORTCUTS
 
 =head2 pubsub
 
+  # Mojolicious
   my $r = $app->routes;
-  $r->route('/:user/callback_url')->pubsub;
+  $r->route('/callback_url')->pubsub;
+
+  # Mojolicious::Lite
+  (any '/callback_url')->pubsub;
 
 Define the callback endpoint for your subscriptions.
 Establishes an L<endpoint|Mojolicious::Plugin::Util::Endpoint>
@@ -1310,7 +1314,6 @@ and needs to be accessible from the web.
 
 This example may be a good starting point for your own implementation, especially,
 if you deal with the subscriber part.
-
 
 
 =head1 TODO

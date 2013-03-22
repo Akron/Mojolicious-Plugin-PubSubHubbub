@@ -3,6 +3,7 @@
 	- Fixed bug in encoding.
 	- Made example app working in real world.
 	- Don't use constants.
+	- Improve documentation.
 
 0.03 2013-03-14
 	- Added discovery.
