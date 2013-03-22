@@ -216,7 +216,8 @@ sub _strip_html {
     s/\{\{//g;
     s/\}\}//g;
     s!<a\s+[^\>]*?href=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?>(.+?)</a>!\{\{$2\}\{$3\}\}!gi;
-    s!<(p|em|strong|i|u)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
+    s!<(p|em|strong|i|u|b)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
+    s!<br[^>]*?/?>!\{\{br /\}\}!gi;
     s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
     s/<[^>]+?>/ /g;
     s!\{\{([^\}]+?)\}\{\s*\}\}!!g;
@@ -516,7 +517,9 @@ get '/feeds' => sub {
   my $entries = $dbh->selectall_arrayref(<<'ENTRIES', { Slice => {} });
 SELECT PubSub_content.*, PubSub.id as topic_id
 FROM PubSub_content, PubSub
-WHERE internal = 0 AND PubSub_content.topic = PubSub.topic
+WHERE
+  PubSub_content.internal = 0 AND
+  PubSub_content.topic = PubSub.topic
 ORDER BY updated DESC
 LIMIT 20 OFFSET 0
 ENTRIES
@@ -540,7 +543,10 @@ get '/topic/:id' => [id => qr/\d+/] => sub {
   my $entries = $dbh->selectall_arrayref(<<'TOPICSELECT', { Slice => {} }, $id);
 SELECT PubSub_content.*, PubSub.id AS topic_id
 FROM PubSub_content, PubSub
-WHERE PubSub.topic = PubSub_content.topic AND PubSub.id = ?
+WHERE
+  PubSub.topic = PubSub_content.topic AND
+  PubSub.id = ? AND
+  PubSub_content.internal = 0
 ORDER BY updated DESC LIMIT 10
 TOPICSELECT
 
@@ -696,7 +702,8 @@ get '/' => sub {
   # Render latest entries
   return $c->render(
     template => 'blog',
-    entries  => $entries
+    entries  => $entries,
+    is_blog  => 1
   );
 } => 'index';
 
@@ -981,7 +988,11 @@ __DATA__
 %= stylesheet "http://sojolicio.us/stylesheets/styles.css", media => "screen"
 %= stylesheet "http://sojolicio.us/stylesheets/prettify-mojo.css", media => "screen"
 %= stylesheet url_for 'styles', format => 'css'
-    <link rel="icon" href="http://sojolicio.us/images/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="http://sojolicio.us/images/favicon.ico" type="image/x-icon" />
+% if (stash('is_blog')) {
+    <link rel="alternate" type="application/atom+xml" href="<%= endpoint 'atom' %>" />
+    <link rel="hub" href="<%= endpoint 'pubsub-hub' %>" />
+% };
     <title><%= $title %></title>
   </head>
   <body>
@@ -992,7 +1003,7 @@ __DATA__
 % };
     <div id="container">
       <div id="logo"></div>
-      <a id="github-ribbon" href="https://github.com/Akron/Sojolicious">
+      <a id="github-ribbon" href="https://github.com/Akron/Mojolicious-Plugin-PubSubHubbub">
         <img src="https://s3.amazonaws.com/github/ribbons/forkme_right_orange_ff7600.png" alt="Fork me on GitHub">
       </a>
       <div class="inner">
@@ -1232,12 +1243,4 @@ p.byline {
 
 p:last-child {
   margin-bottom: .4em;
-}
-
-#github-ribbon img {
-  position: fixed;
-  top: 0;
-  right: 0;
-  border: 0;
-  z-index: 15;
 }
