@@ -977,7 +977,7 @@ The plugin currently supports the publisher and subscriber part of the protocol,
 I<not> the hub part.
 
 This plugin is data store agnostic.
-Please use this plugin by applying hooks.
+Please use this plugin by applying hooks and callbacks.
 
 
 =head1 METHODS
@@ -1204,8 +1204,8 @@ controller object, the content type, and the - maybe topic
 filtered - content as a L<Mojo::DOM> object.
 
 B<Note:> The L<Mojo::DOM> object is canonicalized in a way that each
-entry in the feed (either RSS or Atom) includes its topic in
-C<source link[rel="self"]>.
+entry in the feed (either RSS or Atom) includes its topic in the C<href>
+of C<source E<gt> link[rel="self"]>.
 
 
 =head2 before_pubsub_subscribe
@@ -1294,8 +1294,10 @@ This hook can be used to deal with errors.
 
 The C<examples/> folder contains a working example application with publishing,
 subscription and discovery logic.
-The example depends on L<DBI>, L<DBD::SQLite> and L<XML::Loy> (at least v.0.10).
-It can be started using the daemon, but needs to be accessible from the web.
+The example depends on L<DBI>, L<DBD::SQLite> and L<XML::Loy> (at least v0.10).
+
+It can be started using the daemon, morbo or hypnotoad,
+and needs to be accessible from the web.
 
   $ perl examples/pubsubapp daemon
 
