@@ -5,6 +5,8 @@
 	- Don't use constants.
 	- Improve documentation.
 	- Change lease seconds default to 9 days.
+	- Add screenshot of example app.
+	- First CPAN release.
 
 0.03 2013-03-14
 	- Added discovery.

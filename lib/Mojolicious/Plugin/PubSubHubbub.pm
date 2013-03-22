@@ -1314,9 +1314,14 @@ and needs to be accessible from the web.
 
   $ perl examples/pubsubapp daemon
 
+=begin html
+
+<div style="text-align:center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
+
+=end html
+
 This example may be a good starting point for your own implementation, especially,
 if you deal with the subscriber part.
-
 
 =head1 TODO
 
