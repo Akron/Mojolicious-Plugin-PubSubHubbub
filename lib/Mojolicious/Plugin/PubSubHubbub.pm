@@ -539,7 +539,8 @@ sub _change_subscription {
   unless (exists $param{topic} &&
 	    $param{topic} =~ m{^https?://}i &&
 	      exists $param{hub}) {
-    $log->warn('You have to specify a topic and a hub') and return;
+    $log->warn('You have to specify a topic and a hub');
+    return;
   };
 
   my $mode = $param{mode};

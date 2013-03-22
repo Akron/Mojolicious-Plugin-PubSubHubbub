@@ -219,8 +219,8 @@ sub _strip_html {
     s!<(p|em|strong|i|u)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
     s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
     s/<[^>]+?>//g;
-    s!\{\{(.+?)\}\{(.+?)\}\}!<a href="$1">$2</a>!g;
-    s/\{\{(.+?)\}\}/<$1>/gi;
+    s!\{\{([^\}]+?)\}\{([^\}]+?)\}\}!<a href="$1">$2</a>!g;
+    s/\{\{([^\}]+?)\}\}/<$1>/gi;
   };
   return $string;
 };
@@ -442,7 +442,8 @@ sub _store_subscription {
   my $sth = $dbh->prepare($sql);
 
   unless ($sth) {
-    $log->warn('Unable to prepare ' . $sql) and return;
+    $log->warn('Unable to prepare ' . $sql);
+    return;
   };
 
   # Execution not successfull
@@ -755,6 +756,9 @@ get '/atom' => sub {
     };
   };
 
+  # Get mime type
+  my $mime = $atom->mime;
+
   # Encode data to utf-8
   $atom = b($atom->to_pretty_xml)->encode->to_string;
 
@@ -762,7 +766,7 @@ get '/atom' => sub {
   $c->render(data => $atom);
 
   # Set mime type
-  $c->res->headers->content_type($atom->mime);
+  $c->res->headers->content_type($mime);
 
   return;
 } => 'atom';
