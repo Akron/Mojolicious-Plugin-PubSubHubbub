@@ -26,5 +26,5 @@ WriteMakefile(
     }
   },
   MIN_PERL_VERSION => '5.010001',
-  test => {TESTS => 't/*.t'}
+  test => {TESTS => 't/*.t t/examples/*.t'}
 );

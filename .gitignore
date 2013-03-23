@@ -12,6 +12,7 @@ Makefile
 pm_to_blib
 examples/*
 !examples/pubsubapp
+t/examples/*
 *~
 *.sqlite
 *.log

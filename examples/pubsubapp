@@ -217,24 +217,71 @@ app->callback(pubsub_verify => sub {
 # Strip HTML - this is very simplified
 sub _strip_html {
   my $string = shift;
+
+  # Good elements
   my $ELEM = qr{p|em|strong|i|u|b};
+
   for ($string) {
+
+    # Delete escape syntax from source document
     s/\{\{//g;
     s/\}\}//g;
+
+    # Reformulate valid anchors
     s!<a\s+[^\>]*?href=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?>(.+?)</a>!\{\{$2\}\{$3\}\}!gi;
+
+    # Delete script and style tags including content
+    s!<\s*(script|styles)[^>]*?>(?:.+?)<\s*/\s*\1\s*>!!gi;
+
+    # Escape valid elements
     s!<($ELEM)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
+
+    # Escape linebreaks
     s!<br[^>]*?/?>!\{\{br /\}\}!gi;
+
+    # Reformulate image tags
+    # Todo: Support base64 images
     s!<img\s+[^\>]*?src=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?/?>!\{\{img\}\{$2\}\}!gi;
+
+    # Reformulate header tags
     s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
+
+    # Delete all invalid markup
     s/<[^>]+?>/ /g;
+
+    # Reintroduce images
     s!\{\{img\}\{([^\}]+?)\}\}!<br /><img src="$1" alt="" /><br />!g;
+
+    # Invalid reformulations are deleted
     s!\{\{([^\}]+?)\}\{\s*\}\}!!g;
+
+    # Reintroduce anchors
     s!\{\{([^\}]+?)\}\{([^\}]+?)\}\}!<a href="$1">$2</a>!g;
+
+    # Reintroduce valid tags
     s/\{\{([^\}]+?)\}\}/<$1>/gi;
+
+    # Cleanup
+    # Delete empty elements
     s!<($ELEM|a)[^>]*?>\s*</\1>!!gi;
+
+    # Make paragraphs new linebreaks
     s!<p>(.+?)</p>!$1<br />!gi;
-    s!<br\s*\/>\s*<br\s*\/>!<br />!gi;
+
+    # Make repeating linebreaks single linebreaks
+    s!<br\s*\/>(\s*<br\s*\/>)+!<br />!gi;
+
+    # Delete double linebreaks around starting tags (not images)
     s!<br\s*\/>\s*<\/($ELEM|a)\s*>\s*<br\s*\/>!</$1><br />!gi;
+
+    # Delete linebreaks at documents end
+    s!(?:<br\s*/>)+(<\s/\s*(?:a|$ELEM)\s*>\s*)$!$1!;
+    s!(?:<br\s*/>)+$!!;
+
+    # Delete linebreaks at documents start
+    s!^(<(?:a|$ELEM)[^>]*?>\s*)(?:<br\s*/>)+!$1!;
+    s!^(?:<br\s*/>)+!!;
+
   };
   return b($string)->squish;
 };
