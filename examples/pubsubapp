@@ -462,12 +462,14 @@ sub _store_subscription {
     return;
   };
 
+  my $rv = $sth->execute(@values);
+
   # Execution not successful
-  unless ($sth->execute(@values)) {
+  if (!$rv || $rv < 1) {
 
     # Insert Subscription SQL
     $sql = 'INSERT INTO PubSub (' .
-	join(',', @keys, $param->{topic}) . ') VALUES (' . join(',', ('?') x 9) . ')';
+	join(',', @keys, 'topic') . ') VALUES (' . join(',', ('?') x 9) . ')';
 
     # Prepare statement
     $sth = $dbh->prepare($sql);
