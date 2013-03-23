@@ -47,6 +47,7 @@ use XML::Loy::Date::RFC3339;
 use XML::Loy::Date::RFC822;
 
 my $DC_NS = 'http://purl.org/dc/elements/1.1/';
+my $CONTENT_NS = 'http://purl.org/rss/1.0/modules/content/';
 
 # Switch this for debugging
 # app->mode('development');
@@ -352,8 +353,8 @@ hook on_pubsub_content => sub {
 	};
 
 	# content:encoded element
-	$elem = $entry->at('content\:encoded');
-	if ($elem) {
+	$elem = $entry->at('encoded');
+	if ($elem && $elem->namespace eq $CONTENT_NS) {
 	  $info{content} = _strip_html($elem->all_text);
 	};
 
