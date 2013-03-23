@@ -1,3 +1,7 @@
+0.05 2013-03-23
+        - Fixed a bug in the subscription process
+	  of the example app.
+
 0.04 2013-03-22
         - Fixed base bug in discovery.
 	- Fixed bug in encoding.
@@ -19,7 +23,7 @@
 	  to 'pubsub_accept' callback.
         - Changed 'on_pubsub_verification' hook
 	  to 'pubsub_verify' callback.
-	- Added Example script.
+	- Added example script.
 
 0.01 2013-02-05
   	- Small improvements to documentation.

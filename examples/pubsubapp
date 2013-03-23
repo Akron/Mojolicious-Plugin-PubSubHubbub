@@ -348,7 +348,17 @@ hook on_pubsub_content => sub {
 
 	# Get author
 	$elem = $entry->at('author');
-	$info{author} = $elem ? $elem->all_text : $author;
+	if ($elem) {
+	  $info{author} = $elem->all_text;
+	}
+
+	# Get creator
+	elsif ($elem = $entry->at('creator')) {
+	  $info{author} = $elem->all_text if $elem->namespace eq $DC_NS;
+	};
+
+	# Set feed author if not further specified
+	$info{author} ||= $author;
 
 	# Check rdf:about for a guid
 	$info{guid} //= $entry->attrs('rdf:about');
@@ -452,8 +462,10 @@ sub _store_subscription {
     return;
   };
 
+  my $rv = $sth->execute(@values);
+
   # Execution not successful
-  unless ($sth->execute(@values) >= 1) {
+  unless ($rv || $rv < 1) {
 
     # Insert Subscription SQL
     $sql = 'INSERT INTO PubSub (' .
