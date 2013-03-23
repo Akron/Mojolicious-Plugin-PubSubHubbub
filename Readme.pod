@@ -390,14 +390,14 @@ This hook can be used to deal with errors.
 The C<examples/> folder contains a full working example application with publishing,
 subscription and discovery logic.
 The example has additional dependencies of L<DBI>, L<DBD::SQLite> and
-L<XML::Loy> (at least v0.10).
+L<XML::Loy> (at least v0.11).
 
 It can be started using the daemon, morbo or hypnotoad,
 and needs to be accessible from the web.
 
   $ perl examples/pubsubapp daemon
 
-=for html <br /><div style="text-align: center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
+=for HTML <br /><div style="text-align: center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
 
 This example may be a good starting point for your own implementation, especially,
 if you deal with the subscriber part.

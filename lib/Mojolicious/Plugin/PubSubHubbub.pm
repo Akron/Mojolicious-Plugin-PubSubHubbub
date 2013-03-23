@@ -1314,7 +1314,7 @@ and needs to be accessible from the web.
 
   $ perl examples/pubsubapp daemon
 
-=for html <br /><div style="text-align: center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
+=for HTML <br /><div style="text-align: center;"><img src="http://sojolicio.us/images/pubsubhubbub-screenshot.png" alt="PubSubHubbub Example Application" /></div>
 
 This example may be a good starting point for your own implementation, especially,
 if you deal with the subscriber part.
