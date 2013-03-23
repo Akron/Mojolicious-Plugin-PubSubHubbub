@@ -216,17 +216,22 @@ app->callback(pubsub_verify => sub {
 # Strip HTML - this is very simplified
 sub _strip_html {
   my $string = shift;
+  my $ELEM = qr{p|em|strong|i|u|b};
   for ($string) {
     s/\{\{//g;
     s/\}\}//g;
     s!<a\s+[^\>]*?href=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?>(.+?)</a>!\{\{$2\}\{$3\}\}!gi;
-    s!<(p|em|strong|i|u|b)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
+    s!<($ELEM)[^>]*?>(.+?)</\s*\1\s*>!\{\{$1\}\}$2\{\{/$1\}\}!gi;
     s!<br[^>]*?/?>!\{\{br /\}\}!gi;
+    s!<img\s+[^\>]*?src=([\'\"]?)(https?:[^\1]+?)\1\s*[^>]*?/?>!\{\{img\}\{$2\}\}!gi;
     s!<(h\d)[^>]*?>(.+?)</\s*\1\s*>!\{\{strong\}\}$2\{\{/strong\}\}!gi;
     s/<[^>]+?>/ /g;
+    s!\{\{img\}\{([^\}]+?)\}\}!<img src="$1" alt="" />!g;
     s!\{\{([^\}]+?)\}\{\s*\}\}!!g;
     s!\{\{([^\}]+?)\}\{([^\}]+?)\}\}!<a href="$1">$2</a>!g;
     s/\{\{([^\}]+?)\}\}/<$1>/gi;
+    s!<($ELEM)>\s*</\1>!!gi;
+    s!<p>(.+?)</p>!$1<br />!gi;
   };
   return b($string)->squish;
 };
@@ -344,6 +349,12 @@ hook on_pubsub_content => sub {
 
 	  # Set info
 	  $info{$p} = $elem ? _strip_html($elem->all_text) : '';
+	};
+
+	# content:encoded element
+	$elem = $entry->at('content\:encoded');
+	if ($elem) {
+	  $info{content} = _strip_html($elem->all_text);
 	};
 
 	# Get author
