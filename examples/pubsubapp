@@ -462,10 +462,8 @@ sub _store_subscription {
     return;
   };
 
-  my $rv = $sth->execute(@values);
-
   # Execution not successful
-  unless ($rv || $rv < 1) {
+  unless ($sth->execute(@values)) {
 
     # Insert Subscription SQL
     $sql = 'INSERT INTO PubSub (' .
