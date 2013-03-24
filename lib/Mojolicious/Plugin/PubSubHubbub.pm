@@ -1134,7 +1134,7 @@ hub's response message body is returned additionally.
 =head2 pubsub_accept
 
   # Establish callback
-  $mojo->callback(
+  $app->callback(
     pubsub_accept => sub {
       my ($c, $type, $topics) = @_;
 
@@ -1168,7 +1168,7 @@ helper or on registration.
 =head2 pubsub_verify
 
   # Establish callback
-  $mojo->callback(
+  $app->callback(
     pubsub_verify => sub {
       my ($c, $param) = @_;
 
@@ -1196,7 +1196,7 @@ helper or on registration.
 
 =head2 on_pubsub_content
 
-  $mojo->hook(
+  $app->hook(
     on_pubsub_content => sub {
       my ($c, $type, $dom) = @_;
 
@@ -1222,7 +1222,7 @@ of C<source E<gt> link[rel="self"]>.
 
 =head2 before_pubsub_subscribe
 
-  $mojo->hook(
+  $app->hook(
     before_pubsub_subscribe => sub {
       my ($c, $params, $post) = @_;
 
@@ -1242,7 +1242,7 @@ a secret.
 
 =head2 after_pubsub_subscribe
 
-  $mojo->hook(
+  $app->hook(
     after_pubsub_subscribe => sub {
       my ($c, $hub, $params, $status, $body) = @_;
       if ($status !~ /^2/) {
@@ -1263,7 +1263,7 @@ This hook can be used to deal with errors.
 
 =head2 before_pubsub_unsubscribe
 
-  $mojo->hook(
+  $app->hook(
     before_pubsub_unsubscribe => sub {
       my ($c, $params, $post) = @_;
 
@@ -1283,7 +1283,7 @@ This hook can be used to store unsubscription information.
 
 =head2 after_pubsub_unsubscribe
 
-  $mojo->hook(
+  $app->hook(
     after_pubsub_unsubscribe => sub {
       my ($c, $hub, $params, $status, $body) = @_;
       if ($status !~ /^2/) {
