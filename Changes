@@ -1,6 +1,8 @@
 0.06 2013-03-24
         - Improved documentation.
 	- Improved content handling in example app.
+	- Fixed bug in dereferencing.
+	- Fixed prototype bug.
 
 0.05 2013-03-23
         - Fixed a bug in the subscription process

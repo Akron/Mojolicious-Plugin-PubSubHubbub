@@ -5,7 +5,7 @@ use Mojo::DOM;
 use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # Todo:
 # - Make everything async (top priority)
@@ -26,6 +26,8 @@ my $FEED_ENDING_RE = qr{(?i:\.(r(?:ss|df)|atom))$};
 # User Agent Name
 my $UA_NAME = __PACKAGE__ . ' v' . $VERSION;
 
+# Prototypes
+sub _add_topics;
 
 # Register plugin
 sub register {
@@ -392,7 +394,7 @@ sub _discover_sort_links {
       else {
 	return -1;
       };
-    } values @$alternate);
+    } @$alternate);
   };
 
   # Maybe empty ... maybe not
