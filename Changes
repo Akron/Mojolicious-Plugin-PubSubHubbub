@@ -1,7 +1,7 @@
-0.06 2013-03-24
+0.06 2013-03-25
         - Improved documentation.
 	- Improved content handling in example app.
-	- Fixed bug in dereferencing.
+	- Fixed bug in using "values" with a dereferenced array.
 	- Fixed prototype bug.
 
 0.05 2013-03-23
