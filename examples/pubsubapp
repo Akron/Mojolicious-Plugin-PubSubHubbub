@@ -965,7 +965,7 @@ CONTENT
 
   # Information is missing
   else {
-    $c->flash(message => 'Unable to post new entry -pPlease define author, title and content');
+    $c->flash(message => 'Unable to post new entry - Please define author, title and content');
   };
 
   # Set flash information
@@ -1315,6 +1315,10 @@ article h2 a {
 article p {
   margin: 0 20px 1.1em 10px;
   line-height: 1.7em;
+}
+
+article p img {
+  max-width: 100%;
 }
 
 p.byline {
