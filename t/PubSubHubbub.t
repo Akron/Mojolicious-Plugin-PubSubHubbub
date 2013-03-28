@@ -73,32 +73,38 @@ is($dom->find('link[rel="self"][href="http://sojolicio.us/blog"]')->size,
 $dom = $dom->parse($rss);
 my $topics = Mojolicious::Plugin::PubSubHubbub::_find_topics('rss',$dom);
 is(@$topics, 2, 'Topics in RSS');
-ok($topics ~~ ['http://sojolicio.us/2/blog','http://sojolicio.us/blog.rss'],
-   'Topics in RSS 2');
+is($topics->[0], 'http://sojolicio.us/2/blog', 'Topics in RSS 2');
+is($topics->[1], 'http://sojolicio.us/blog.rss', 'Topics in RSS 3');
+
 
 # filter topics in rss
 $topics = Mojolicious::Plugin::PubSubHubbub::_filter_topics(
   $dom, ['http://sojolicio.us/2/blog'] );
 is($dom->find('item')->size, 1, 'Filtered topics in RSS');
 is(@$topics, 1, 'Filtered topics in RSS 2');
-ok($topics ~~ ['http://sojolicio.us/2/blog'],
+is($topics->[0], 'http://sojolicio.us/2/blog',
    'Filtered topics in RSS 3');
 is($dom->find('item')->size, 1, 'Filtered topics in RSS 4');
 
 
 # find topics in atom
 $dom = $dom->parse($atom);
-$topics = Mojolicious::Plugin::PubSubHubbub::_find_topics('atom',$dom);
-is(@$topics, 2, 'Topics in Atom');
-ok($topics ~~ ['http://sojolicio.us/2/blog','http://sojolicio.us/blog.atom'],
-   'Topics in Atom 2');
+$topics = Mojolicious::Plugin::PubSubHubbub::_find_topics('atom', $dom);
+is(ref $topics, 'ARRAY', 'Topics in Atom is array');
+ok($topics, 'Topics in Atom exists');
+is($#$topics, 1, 'Topics in Atom last element');
+is(scalar @$topics, 2, 'Topics in Atom - explicit scalar');
+is(@$topics, 2, 'Topics in Atom - implicit scalar');
+is($topics->[0], 'http://sojolicio.us/2/blog', 'Topics in Atom 2');
+is($topics->[1], 'http://sojolicio.us/blog.atom', 'Topics in Atom 3');
+
 
 # filter topics in atom
 $topics = Mojolicious::Plugin::PubSubHubbub::_filter_topics(
   $dom, ['http://sojolicio.us/2/blog'] );
 is($dom->find('entry')->size, 1, 'Filtered topics in Atom');
 is(@$topics, 1, 'Filtered topics in Atom 2');
-ok($topics ~~ ['http://sojolicio.us/2/blog'],
+is($topics->[0], 'http://sojolicio.us/2/blog',
    'Filtered topics in Atom 3');
 is($dom->find('entry')->size, 1, 'Filtered topics in Atom 4');
 
@@ -108,16 +114,15 @@ is($dom->find('entry')->size, 1, 'Filtered topics in Atom 4');
 $dom = $dom->parse($rdf);
 $topics = Mojolicious::Plugin::PubSubHubbub::_find_topics('rss',$dom);
 is(@$topics, 2, 'Topics in RDF/RSS');
-ok($topics ~~ ['http://sojolicio.us/2/blog','http://sojolicio.us/blog.rss'],
-   'Topics in RDF/RSS 2');
+is($topics->[0], 'http://sojolicio.us/2/blog', 'Topics in RDF/RSS 2');
+is($topics->[1], 'http://sojolicio.us/blog.rss', 'Topics in RDF/RSS 3');
 
 # filter topics in rdf
 $topics = Mojolicious::Plugin::PubSubHubbub::_filter_topics(
   $dom, ['http://sojolicio.us/2/blog'] );
 is($dom->find('item')->size, 1, 'Filtered topics in RDF/RSS');
 is(@$topics, 1, 'Filtered topics in RDF/RSS 2');
-ok($topics ~~ ['http://sojolicio.us/2/blog'],
-   'Filtered topics in RDF/RSS 3');
+is($topics->[0],'http://sojolicio.us/2/blog', 'Filtered topics in RDF/RSS 3');
 is($dom->find('item')->size, 1, 'Filtered topics in RDF/RSS 4');
 
 
@@ -154,24 +159,33 @@ $app->callback(
     if ($request_count == 1) {
       is($type, 'rss', 'on_ps_a (0) - RSS type');
       is(@$topics, 2, "on_ps_a (0) - Topics in RSS");
-      ok($topics ~~ ['http://sojolicio.us/2/blog',
-		     'http://sojolicio.us/blog.rss'],
-	 "on_ps_a (0) - Topics in RSS 2");
+      is($topics->[0],'http://sojolicio.us/2/blog', "on_ps_a (0) - Topics in RSS 2");
+      is($topics->[1],'http://sojolicio.us/blog.rss', "on_ps_a (0) - Topics in RSS 3");
     }
 
     # Second request
     elsif ($request_count == 2) {
+
+      my $info = "on_ps_a ($request_count) - Topics in RSS/Atom/RDF";
+
+      is(ref $topics, 'ARRAY', "$info is array");
+      ok($topics, $info . ' exists');
+      is($#$topics, 1, $info . ' last element');
+      is(scalar @$topics, 2, $info . ' - explicit scalar');
+      is(@$topics, 2, $info . ' - implicit scalar');
+
+
+      is(@$topics, 2, $info);
       is(@$topics, 2, "on_ps_a ($request_count) - Topics in RSS/Atom/RDF");
-      ok($topics ~~ ['http://sojolicio.us/2/blog',
-		     'http://sojolicio.us/blog.rss'] ||
-         $topics ~~ ['http://sojolicio.us/2/blog',
-                     'http://sojolicio.us/blog.atom'],
+      ok($topics->[0] eq 'http://sojolicio.us/2/blog' && (
+	$topics->[1] eq 'http://sojolicio.us/blog.rss' ||
+	  $topics->[1] eq 'http://sojolicio.us/blog.atom'),
 	 "on_ps_a ($request_count) - Topics in RSS/Atom/RDF 2");
       @$topics = ('http://sojolicio.us/2/blog');
     }
 
     # Third request
-    elsif ($request_count ~~ [3,4,5]) {
+    elsif ($request_count >= 3 && $request_count <= 5) {
       @$topics = ('http://sojolicio.us/2/blog');
       $secret = 'zoidberg';
     }
