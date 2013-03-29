@@ -5,7 +5,7 @@
 #
 # Prerequisites:
 #
-#  - XML::Loy (v0.11)
+#  - XML::Loy (v0.13)
 #  - DBI
 #  - DBD::SQLite
 #

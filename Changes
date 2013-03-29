@@ -1,10 +1,11 @@
-0.06 2013-03-28
+0.06 2013-03-29
         - Improved documentation.
 	- Improved content handling in example app.
 	- Fixed bug in using "values" with a dereferenced array.
 	- Fixed prototype bug.
         - 0.06_1: Improved test suite.
 	- 0.06_2: Deleted all ~~ from test suite.
+	- 0.06_3: Sort topics.
 
 0.05 2013-03-23
         - Fixed a bug in the subscription process

@@ -5,7 +5,7 @@ use Mojo::DOM;
 use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.06_2';
+our $VERSION = '0.06_3';
 
 # Todo:
 # - Make everything async (top priority)
@@ -743,7 +743,7 @@ sub _find_topics {
   # Unify list
   if (@topics > 1) {
     my %topics = map { $_ => 1 } @topics;
-    @topics = keys %topics;
+    @topics = sort keys %topics;
   };
 
   return \@topics;
@@ -1309,7 +1309,7 @@ This hook can be used to deal with errors.
 The C<examples/> folder contains a full working example application with publishing,
 subscription and discovery logic.
 The example has additional dependencies of L<DBI>, L<DBD::SQLite> and
-L<XML::Loy> (at least v0.11).
+L<XML::Loy> (at least v0.13).
 
 It can be started using the daemon, morbo or hypnotoad,
 and needs to be accessible from the web.
