@@ -5,7 +5,7 @@ use Mojo::DOM;
 use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.06_3';
+our $VERSION = '0.07';
 
 # Todo:
 # - Make everything async (top priority)
