@@ -1,7 +1,6 @@
+#!/usr/bin/env perl
 use strict;
 use warnings;
-
-$|++;
 
 # Disable Bonjour, IPv6 and libev
 BEGIN {
