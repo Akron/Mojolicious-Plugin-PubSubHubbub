@@ -577,7 +577,7 @@ hook before_pubsub_unsubscribe => \&_store_subscription;
 
 
 # Set PubSub shortcut
-(any '/ps-callback')->pubsub;
+any('/ps-callback')->pubsub;
 
 
 # -----------------
