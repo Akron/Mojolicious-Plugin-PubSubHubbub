@@ -151,6 +151,7 @@ sub publish {
     my $msg = 'Cannot ping hub';
     $msg .= ' - maybe no SSL support' if index($plugin->hub, 'https') == 0;
     $c->app->log->warn($msg);
+
     return;
   };
 

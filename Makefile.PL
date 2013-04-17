@@ -14,7 +14,7 @@ WriteMakefile(
   },
   PREREQ_PM => {
     'Mojolicious' => 3.91,
-    'Mojolicious::Plugin::Util::Endpoint' => 0.12,
+    'Mojolicious::Plugin::Util::Endpoint' => 0.14,
     'Mojolicious::Plugin::Util::Callback' => 0.02
   },
   LICENSE      => 'perl',
