@@ -293,6 +293,7 @@ $app->routes->route('/hub')
 
       # First request
       if ($request_count == 1) {
+
 	is ($c->param('hub.mode'), 'subscribe', 'Subscription mode');
 
 	is ($c->param('hub.topic'),
@@ -308,22 +309,24 @@ $app->routes->route('/hub')
 	is($c->req->headers->header('Content-Type'),
 	   'application/x-www-form-urlencoded', 'Content-Type');
 
-	return $c->render_text('okay');
+	return $c->render(text => 'okay');
       }
 
       # Second request
       elsif ($request_count == 2) {
+
 	is ($c->param('hub.mode'), 'subscribe', 'Subscription mode');
 
 	isnt ($c->param('hub.topic'),
 	      'http://sojolicio.us/blog.xml',
 	      'Topic correct');
 
-	return $c->render_text('not_okay', status => 404);
+	return $c->render(text => 'not_okay', status => 404);
       }
 
       # Third request
       elsif ($request_count == 3) {
+
 	is ($c->param('hub.mode'), 'unsubscribe', 'Unsubscription mode');
 
 	is ($c->param('hub.topic'),
@@ -339,7 +342,7 @@ $app->routes->route('/hub')
 	is($c->req->headers->header('Content-Type'),
 	   'application/x-www-form-urlencoded', 'Content-Type');
 
-	return $c->render_text('okay');
+	return $c->render(text => 'okay');
       }
 
       # Second request
@@ -350,7 +353,7 @@ $app->routes->route('/hub')
 	      'http://sojolicio.us/blog.xml',
 	      'Topic correct');
 
-	return $c->render_text('not_okay', status => 404);
+	return $c->render(text => 'not_okay', status => 404);
 
       }
 
@@ -361,13 +364,13 @@ $app->routes->route('/hub')
 
 	if ($request_count == 5) {
 	  if ($test eq 'http://sojolicio.us/blog.xml') {
-	    return $c->render_text('okay');
+	    return $c->render(text => 'okay');
 	  };
 	}
 
 	elsif ($request_count == 6) {
 	  if ($test eq '/blog.xml,/comments.xml') {
-	    return $c->render_text('okay');
+	    return $c->render(text => 'okay');
 	  };
 	};
       };

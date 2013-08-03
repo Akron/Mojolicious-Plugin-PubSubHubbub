@@ -5,12 +5,11 @@ use Mojo::DOM;
 use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 # Todo:
 # - Make everything async (top priority)
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
-
 
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 9 * 24 * 60 * 60 );
@@ -263,7 +262,7 @@ sub _discover_dom_links {
   # Find alternate representations
   $dom->find('link[rel="alternate"], link[rel="self"], link[rel="hub"]')->each(
     sub {
-      my ($href, $rel, $type, $title) = @{$_->attrs}{qw/href rel type title/};
+      my ($href, $rel, $type, $title) = @{$_->attr}{qw/href rel type title/};
 
       # Is no supported type
       return if $type && $type !~ $FEED_TYPE_RE;
@@ -588,10 +587,10 @@ sub _change_subscription {
   # Send subscription change to hub
   my $tx = $ua->post($param{hub} => form => \%post);
 
-  my $res = $tx->res if $tx->success;
+  my $res = $tx->success;
 
   # No response
-  unless ($tx->success && $res) {
+  unless ($res) {
     my $msg = 'Cannot ping hub';
     $msg .= ' - maybe no SSL support' if index($param{hub}, 'https') == 0;
     $log->warn($msg);
@@ -702,7 +701,7 @@ sub _find_topics {
   my $links = $dom->find('source > link[rel="self"][href]');
 
   # Save href as topics
-  my @topics = @{ $links->map( sub { $_->attrs('href') } ) } if $links;
+  my @topics = @{ $links->map( sub { $_->attr('href') } ) } if $links;
 
   # Find all entries, regardless if rss or atom
   my $entries = $dom->find('item, feed > entry');
@@ -720,7 +719,7 @@ sub _find_topics {
 
     # Channel or feed link
     if ($link) {
-      $self_href = $link->attrs('href');
+      $self_href = $link->attr('href');
     }
 
     # Source of first item in RSS
@@ -728,7 +727,7 @@ sub _find_topics {
 
       # Possible
       $link = $dom->at('item > source');
-      $self_href = $link->attrs('url') if $link;
+      $self_href = $link->attr('url') if $link;
     };
 
     # Add topic to all entries
@@ -738,7 +737,7 @@ sub _find_topics {
     $links = $dom->find('source > link[rel="self"][href]');
 
     # Save href as topics
-    @topics = @{ $links->map( sub { $_->attrs('href') } ) } if $links;
+    @topics = @{ $links->map( sub { $_->attr('href') } ) } if $links;
   };
 
   # Unify list
@@ -809,7 +808,7 @@ sub _filter_topics {
   $links->each(
     sub {
       my $l = shift;
-      my $href = $l->attrs('href');
+      my $href = $l->attr('href');
 
       # entry is not allowed
       unless (exists $allowed{$href}) {
