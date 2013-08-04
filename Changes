@@ -1,5 +1,8 @@
-0.09 2013-08-03
+0.10 2013-08-03
         - Update to Mojolicious 4.23.
+
+0.09 2013-05-20
+        - Fixed for Mojolicious 4.0 compatibility.
 
 0.08 2013-04-19
         - Improved documentation.
