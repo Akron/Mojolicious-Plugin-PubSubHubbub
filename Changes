@@ -1,5 +1,5 @@
 0.12 2014-05-31
-        - Compatibility fix for link headers.
+        - Compatibility fix for link headers in Mojo versions > 4.99.
 
 0.11 2014-05-29
         - Cleanup.
