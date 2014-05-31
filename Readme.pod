@@ -414,7 +414,8 @@ methods will allow for non-blocking as well.
 
 L<Mojolicious> (best with SSL support),
 L<Mojolicious::Plugin::Util::Endpoint>,
-L<Mojolicious::Plugin::Util::Callback>.
+L<Mojolicious::Plugin::Util::Callback>,
+L<Mojolicious::Plugin::Util::RandomString>.
 
 
 =head1 AVAILABILITY
@@ -426,9 +427,9 @@ This plugin is part of the L<Sojolicious|http://sojolicio.us> project.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2013, L<Nils Diewald|http://nils-diewald.de/>.
+Copyright (C) 2011-2014, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
-and/or modify it under the same terms as Perl.
+and/or modify it under the terms of the Artistic License version 2.0.
 
 =cut

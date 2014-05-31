@@ -5,7 +5,7 @@ use Mojo::DOM;
 use Mojo::ByteStream 'b';
 use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.10';
+our $VERSION = '0.12';
 
 # Todo:
 # - Make everything async (top priority)
@@ -14,10 +14,6 @@ our $VERSION = '0.10';
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 9 * 24 * 60 * 60 );
 has hub => 'http://pubsubhubbub.appspot.com/';
-
-
-# Character set for challenge
-my @CHALLENGE_CHARS = ('A' .. 'Z', 'a' .. 'z', 0 .. 9 );
 
 my $FEED_TYPE_RE   = qr{^(?i:application/(atom|r(?:ss|df))\+xml)};
 my $FEED_ENDING_RE = qr{(?i:\.(r(?:ss|df)|atom))$};
@@ -53,6 +49,14 @@ sub register {
   unless (exists $helpers->{'endpoint'}) {
     $mojo->plugin('Util::Endpoint');
   };
+
+  # Load 'randomstring' plugin
+  $mojo->plugin('Util::RandomString' => {
+    pubsub_challenge => {
+      length => 12,
+      alphabet => [ 'A' .. 'Z', 'a' .. 'z', 0 .. 9 ]
+    }
+  });
 
   # Set hub attribute
   if ($param->{hub}) {
@@ -206,13 +210,16 @@ sub verify {
 sub _discover_header_links {
   my $header = shift;
 
+  my $header_hash = $header->to_hash(1);
+
+  my @links = (@{$header_hash->{Link} // []}, @{$header_hash->{link} // []});
   my %links;
 
   # Iterate through all header links
-  foreach ($header->header('link')) {
+  foreach (@links) {
 
     # Make multiline headers one line
-    $_ = join(' ', @$_);
+    $_ = join(' ', @$_) if ref $_;
 
     # Check for link with correct relation
     if ($_ =~ /^\<([^>]+?)\>(.*?rel\s*=\s*"(self|hub|alternate)".*?)$/mi) {
@@ -341,7 +348,8 @@ sub _discover_sort_links {
   # Search in alternate representations for best match
   if ($alternate) {
 
-    # Iterate through all alternate links and check their titles
+    # Iterate through all alternate links
+    # and check their titles
     foreach my $link (@$alternate) {
 
       # No title given
@@ -375,19 +383,22 @@ sub _discover_sort_links {
       # Sort by title
       if ($a->{pref} < $b->{pref}) {
 	return 1;
-      } elsif ($a->{pref} > $b->{pref}) {
+      }
+      elsif ($a->{pref} > $b->{pref}) {
 	return -1;
       }
       # Sort by type
       elsif ($a->{short_type} gt $b->{short_type}) {
 	return 1;
-      } elsif ($a->{short_type} lt $b->{short_type}) {
+      }
+      elsif ($a->{short_type} lt $b->{short_type}) {
 	return -1;
       }
       # Sort by length
       elsif (length($a->{href}) > length($b->{href})) {
 	return 1;
-      } elsif (length($a->{href}) <= length($b->{href})) {
+      }
+      elsif (length($a->{href}) <= length($b->{href})) {
 	return -1;
       }
       # Equal
@@ -412,10 +423,7 @@ sub discover {
   return () unless $_[0];
 
   # Get uri
-  my $base = Mojo::URL->new( shift );
-
-  # No valid uri
-  return () unless $base;
+  my $base = Mojo::URL->new( shift ) or return ();
 
   # Set base to uri
   $base->base($c->req->url);
@@ -426,11 +434,11 @@ sub discover {
     name => $UA_NAME
   );
 
-  # Retrieve resource
-  my $tx = $ua->get($base);
-
   # Initialize variables
   my ($hub, $topic, $nbase, $ntopic);
+
+  # Retrieve resource
+  my $tx = $ua->get($base);
 
   if ($tx->success) {
 
@@ -446,62 +454,61 @@ sub discover {
     );
 
     # Fine
-    goto STOPDISCOVERY if $topic && $hub;
+    unless ($topic && $hub) {
 
-    my $dom = $res->dom;
-
-    # Check sorted dom links
-    ($topic, $hub) = _discover_sort_links(
-      _discover_dom_links($dom)
-    );
-
-    # Fine
-    goto STOPDISCOVERY if ($topic && $hub) || !$topic;
-
-    # Initialize new UserAgent
-    $ua = Mojo::UserAgent->new(
-      max_redirects => 3,
-      name => $UA_NAME
-    );
-
-    # Set new base base
-    $nbase = Mojo::URL->new($topic->{href})->base($base)->to_abs;
-
-    # Retrieve resource
-    $tx = $ua->get($nbase);
-
-    # Request was successful
-    if ($tx->success) {
-
-      # Change nbase after possible redirects
-      $nbase = $tx->req->url;
-
-      # Get response
-      $res = $tx->res;
-
-      # Check sorted header links
-      ($ntopic, $hub) = _discover_sort_links(
-	_discover_header_links($res->headers)
-      );
-
-      # Fine
-      goto STOPDISCOVERY if $topic && $hub;
+      my $dom = $res->dom;
 
       # Check sorted dom links
-      ($ntopic, $hub) = _discover_sort_links(
-	_discover_dom_links($res->dom)
+      ($topic, $hub) = _discover_sort_links(
+	_discover_dom_links($dom)
       );
-    }
+    };
 
-    # Reset nbase as no connection occurred
-    else {
-      $nbase = undef;
+    # Fine
+    if ($topic && !$hub) {
+
+      # Initialize new UserAgent
+      $ua = Mojo::UserAgent->new(
+	max_redirects => 3,
+	name => $UA_NAME
+      );
+
+      # Set new base base
+      $nbase = Mojo::URL->new($topic->{href})->base($base)->to_abs;
+
+      # Retrieve resource
+      $tx = $ua->get($nbase);
+
+      # Request was successful
+      if ($tx->success) {
+
+	# Change nbase after possible redirects
+	$nbase = $tx->req->url;
+
+	# Get response
+	$res = $tx->res;
+
+	# Check sorted header links
+	($ntopic, $hub) = _discover_sort_links(
+	  _discover_header_links($res->headers)
+	);
+
+
+	unless ($ntopic && $hub) {
+
+	  # Check sorted dom links
+	  ($ntopic, $hub) = _discover_sort_links(
+	    _discover_dom_links($res->dom)
+	  );
+	};
+      }
+
+      # Reset nbase as no connection occurred
+      else {
+	$nbase = undef;
+      };
     };
   };
-
-  # All requests are finished
-
- STOPDISCOVERY:
 
   # Make relative path for topics and hubs absolute
   $hub = Mojo::URL->new($hub->{href})->base( $nbase || $base )->to_abs if $hub;
@@ -565,7 +572,8 @@ sub _change_subscription {
   $post{verify_token} =
     exists $param{verify_token} ?
       $param{verify_token} :
-	($param{verify_token} = _challenge(12));
+	($param{verify_token} =
+	   $c->random_string('pubsub_challenge'));
 
   $post{verify} = "${_}sync" foreach ('a', '');
 
@@ -897,17 +905,6 @@ FAIL
     data   => $fail,
     status => 400  # bad request
   );
-};
-
-
-# Create challenge string
-sub _challenge {
-  state $l = scalar @CHALLENGE_CHARS;
-  my $chal = '';
-  for (1 .. $_[0] || 8) {
-    $chal .= $CHALLENGE_CHARS[ int( rand( $l ) ) ];
-  };
-  return $chal;
 };
 
 
@@ -1333,7 +1330,8 @@ methods will allow for non-blocking as well.
 
 L<Mojolicious> (best with SSL support),
 L<Mojolicious::Plugin::Util::Endpoint>,
-L<Mojolicious::Plugin::Util::Callback>.
+L<Mojolicious::Plugin::Util::Callback>,
+L<Mojolicious::Plugin::Util::RandomString>.
 
 
 =head1 AVAILABILITY
@@ -1345,9 +1343,9 @@ This plugin is part of the L<Sojolicious|http://sojolicio.us> project.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2013, L<Nils Diewald|http://nils-diewald.de/>.
+Copyright (C) 2011-2014, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
-and/or modify it under the same terms as Perl.
+and/or modify it under the terms of the Artistic License version 2.0.
 
 =cut

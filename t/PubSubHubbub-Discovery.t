@@ -58,30 +58,31 @@ ok(my $links = Mojolicious::Plugin::PubSubHubbub::_discover_header_links($header
 is($links->{hub}->[0]->{href}, 'http://pubsubhubbub.appspot.com/', 'Found hub');
 is($links->{self}->[0]->{href}, 'http://sojolicio.us/feed.xml', 'Found feed');
 
-is($links->{alternate}->[0]->{href}, 'http://sojolicio.us/feed/comment.atom', 'Found alternate');
-is($links->{alternate}->[0]->{short_type}, 'atom', 'Found alternate');
-is($links->{alternate}->[0]->{title}, 'Feed Comments', 'Found alternate');
-is($links->{alternate}->[0]->{type}, 'application/atom+xml', 'Found alternate');
+my $alt = $links->{alternate};
+is($alt->[0]->{href}, 'http://sojolicio.us/feed/comment.atom', 'Found alternate');
+is($alt->[0]->{short_type}, 'atom', 'Found alternate');
+is($alt->[0]->{title}, 'Feed Comments', 'Found alternate');
+is($alt->[0]->{type}, 'application/atom+xml', 'Found alternate');
 
-is($links->{alternate}->[1]->{href}, 'http://sojolicio.us/feed.rss', 'Found alternate');
-is($links->{alternate}->[1]->{short_type}, 'rss', 'Found alternate');
-is($links->{alternate}->[1]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[1]->{type}, 'application/rss+xml', 'Found alternate');
+is($alt->[1]->{href}, 'http://sojolicio.us/feed.rss', 'Found alternate');
+is($alt->[1]->{short_type}, 'rss', 'Found alternate');
+is($alt->[1]->{title}, 'Feeds', 'Found alternate');
+is($alt->[1]->{type}, 'application/rss+xml', 'Found alternate');
 
-is($links->{alternate}->[2]->{href}, 'http://sojolicio.us/feed.rdf', 'Found alternate');
-is($links->{alternate}->[2]->{short_type}, 'rdf', 'Found alternate');
-is($links->{alternate}->[2]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[2]->{type}, 'application/rdf+xml', 'Found alternate');
+is($alt->[2]->{href}, 'http://sojolicio.us/feed.rdf', 'Found alternate');
+is($alt->[2]->{short_type}, 'rdf', 'Found alternate');
+is($alt->[2]->{title}, 'Feeds', 'Found alternate');
+is($alt->[2]->{type}, 'application/rdf+xml', 'Found alternate');
 
-is($links->{alternate}->[3]->{href}, 'http://sojolicio.us/feed.atom', 'Found alternate');
-is($links->{alternate}->[3]->{short_type}, 'atom', 'Found alternate');
-is($links->{alternate}->[3]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[3]->{type}, 'application/atom+xml', 'Found alternate');
+is($alt->[3]->{href}, 'http://sojolicio.us/feed.atom', 'Found alternate');
+is($alt->[3]->{short_type}, 'atom', 'Found alternate');
+is($alt->[3]->{title}, 'Feeds', 'Found alternate');
+is($alt->[3]->{type}, 'application/atom+xml', 'Found alternate');
 
-is($links->{alternate}->[4]->{href}, 'http://sojolicio.us/feed/comments.rss', 'Found alternate');
-is($links->{alternate}->[4]->{short_type}, 'rss', 'Found alternate');
-is($links->{alternate}->[4]->{title}, 'Feeds Comments', 'Found alternate');
-ok(!$links->{alternate}->[4]->{type}, 'Found alternate');
+is($alt->[4]->{href}, 'http://sojolicio.us/feed/comments.rss', 'Found alternate');
+is($alt->[4]->{short_type}, 'rss', 'Found alternate');
+is($alt->[4]->{title}, 'Feeds Comments', 'Found alternate');
+ok(!$alt->[4]->{type}, 'Found alternate');
 
 my ($topic, $hub) = Mojolicious::Plugin::PubSubHubbub::_discover_sort_links($links);
 
@@ -136,30 +137,31 @@ ok($links = Mojolicious::Plugin::PubSubHubbub::_discover_dom_links($dom), 'Disco
 is($links->{hub}->[0]->{href}, 'http://pubsubhubbub.appspot.com/', 'Found hub');
 is($links->{self}->[0]->{href}, 'http://sojolicio.us/feed.xml', 'Found feed');
 
-is($links->{alternate}->[0]->{href}, 'http://sojolicio.us/feed/comment.atom', 'Found alternate');
-is($links->{alternate}->[0]->{short_type}, 'atom', 'Found alternate');
-is($links->{alternate}->[0]->{title}, 'Feed Comments', 'Found alternate');
-is($links->{alternate}->[0]->{type}, 'application/atom+xml', 'Found alternate');
+$alt = $links->{alternate};
+is($alt->[0]->{href}, 'http://sojolicio.us/feed/comment.atom', 'Found alternate');
+is($alt->[0]->{short_type}, 'atom', 'Found alternate');
+is($alt->[0]->{title}, 'Feed Comments', 'Found alternate');
+is($alt->[0]->{type}, 'application/atom+xml', 'Found alternate');
 
-is($links->{alternate}->[1]->{href}, 'http://sojolicio.us/feed.rss', 'Found alternate');
-is($links->{alternate}->[1]->{short_type}, 'rss', 'Found alternate');
-is($links->{alternate}->[1]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[1]->{type}, 'application/rss+xml', 'Found alternate');
+is($alt->[1]->{href}, 'http://sojolicio.us/feed.rss', 'Found alternate');
+is($alt->[1]->{short_type}, 'rss', 'Found alternate');
+is($alt->[1]->{title}, 'Feeds', 'Found alternate');
+is($alt->[1]->{type}, 'application/rss+xml', 'Found alternate');
 
-is($links->{alternate}->[2]->{href}, 'http://sojolicio.us/feed.rdf', 'Found alternate');
-is($links->{alternate}->[2]->{short_type}, 'rdf', 'Found alternate');
-is($links->{alternate}->[2]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[2]->{type}, 'application/rdf+xml', 'Found alternate');
+is($alt->[2]->{href}, 'http://sojolicio.us/feed.rdf', 'Found alternate');
+is($alt->[2]->{short_type}, 'rdf', 'Found alternate');
+is($alt->[2]->{title}, 'Feeds', 'Found alternate');
+is($alt->[2]->{type}, 'application/rdf+xml', 'Found alternate');
 
-is($links->{alternate}->[3]->{href}, 'http://sojolicio.us/feed.atom', 'Found alternate');
-is($links->{alternate}->[3]->{short_type}, 'atom', 'Found alternate');
-is($links->{alternate}->[3]->{title}, 'Feeds', 'Found alternate');
-is($links->{alternate}->[3]->{type}, 'application/atom+xml', 'Found alternate');
+is($alt->[3]->{href}, 'http://sojolicio.us/feed.atom', 'Found alternate');
+is($alt->[3]->{short_type}, 'atom', 'Found alternate');
+is($alt->[3]->{title}, 'Feeds', 'Found alternate');
+is($alt->[3]->{type}, 'application/atom+xml', 'Found alternate');
 
-is($links->{alternate}->[4]->{href}, 'http://sojolicio.us/feed/comments.rss', 'Found alternate');
-is($links->{alternate}->[4]->{short_type}, 'rss', 'Found alternate');
-is($links->{alternate}->[4]->{title}, 'Feeds Comments', 'Found alternate');
-ok(!$links->{alternate}->[4]->{type}, 'Found alternate');
+is($alt->[4]->{href}, 'http://sojolicio.us/feed/comments.rss', 'Found alternate');
+is($alt->[4]->{short_type}, 'rss', 'Found alternate');
+is($alt->[4]->{title}, 'Feeds Comments', 'Found alternate');
+ok(!$alt->[4]->{type}, 'Found alternate');
 
 ($topic, $hub) = Mojolicious::Plugin::PubSubHubbub::_discover_sort_links($links);
 
