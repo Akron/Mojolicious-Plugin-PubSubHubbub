@@ -120,8 +120,10 @@ Defaults to 9 days.
 
 Called when registering the plugin.
 Accepts the attributes mentioned as parameters.
-All parameters can be set either on registration or
-as part of the configuration file with the key C<PubSubHubbub>.
+
+All parameters can be set either as part of the configuration
+file with the key C<PubSubHubbub> or on registration
+(that can be overwritten by configuration).
 
 
 =head1 SHORTCUTS
@@ -154,7 +156,7 @@ The discovery heuristics may change without notification.
 =head2 pubsub_publish
 
   # In Controllers
-  $c->pubsub_publish(
+  my $success = $c->pubsub_publish(
     'my_feed',                       # named route
     '/feed.atom',                    # relative paths
     'https://sojolicio.us/feed.atom' # absolute URIs
@@ -162,6 +164,7 @@ The discovery heuristics may change without notification.
 
 Publish a list of feeds in terms of a notification to the hub.
 Supports endpoints, named routes, relative paths and absolute URIs.
+Returns a true value on success.
 
 
 =head2 pubsub_subscribe
@@ -169,7 +172,7 @@ Supports endpoints, named routes, relative paths and absolute URIs.
   # In Controllers
   if ($c->pubsub_subscribe(
     topic => 'https://sojolicio.us/feed.atom',
-    hub   => 'https://hub.sojolicio.us' );
+    hub   => 'https://hub.sojolicio.us',
     lease_seconds => 123456
   )) {
     print 'You successfully subscribed!';

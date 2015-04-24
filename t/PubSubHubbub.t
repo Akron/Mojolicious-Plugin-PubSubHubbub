@@ -359,7 +359,7 @@ $app->routes->route('/hub')
 
       elsif ($request_count >= 5) {
 	is ($c->param('hub.mode'), 'publish', 'publication mode');
-	my @topics = $c->param('hub.url');
+	my @topics = @{$c->every_param('hub.url')};
 	my $test = join(',',@topics);
 
 	if ($request_count == 5) {
@@ -545,6 +545,7 @@ $request_count = 5;
 
 # Publish
 ok(!$app->pubsub_publish, 'Publication empty');
+
 ok($app->pubsub_publish('http://sojolicio.us/blog.xml'),
    'Publication set');
 

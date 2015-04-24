@@ -1,3 +1,10 @@
+0.14 2015-04-24
+        - Updated to Mojolicious 6.00.
+
+0.13 2014-10-17
+        - Updated to Mojolicious 5.49.
+	- Fixed test suite for new every_param() method.
+
 0.12 2014-05-31
         - Compatibility fix for link headers in Mojo versions > 4.99.
 
