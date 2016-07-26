@@ -18,7 +18,7 @@
 # For debugging, please set mode and logging level below
 #
 # -------------------------------------
-# Copyright (C) 2011-2013, Nils Diewald
+# Copyright (C) 2011-2016, Nils Diewald
 # http://nils-diewald.de/
 # -------------------------------------
 #
@@ -283,7 +283,7 @@ sub _strip_html {
     s!^(?:<br\s*/>)+!!;
 
   };
-  return b($string)->squish;
+  return b($string);
 };
 
 
@@ -672,7 +672,7 @@ get '/topic/:id/unsubscribe' => [id => qr/\d+/] => sub {
       delete $feed->{mode};
 
       # Unsubscription successful
-      if ($c->pubsub_unsubscribe( %$feed )) {
+      if ($c->pubsub->unsubscribe( %$feed )) {
 	$msg = 'You unsubscribed from ' . $feed->{topic};
       }
 
@@ -732,7 +732,7 @@ any '/topic/subscribe' => sub {
   $new_param{secret} = $secret if $secret;
 
   # Subscribe to new feed
-  if ($c->pubsub_subscribe( %new_param )) {
+  if ($c->pubsub->subscribe( %new_param )) {
     $c->flash(message => 'You subscribed to ' . $topic);
   }
 
@@ -757,7 +757,7 @@ get '/discover' => sub {
   return $c->render_not_found unless $uri;
 
   # Discover uri
-  my ($topic, $hub) = $c->pubsub_discover($uri);
+  my ($topic, $hub) = $c->pubsub->discover($uri);
 
   # Set information
   $c->flash(hub   => $hub)   if $hub;
@@ -933,7 +933,7 @@ CONTENT
 
 	# Notify hub for new content
 	my $msg = 'You posted a new entry';
-	if ($c->pubsub_publish('atom')) {
+	if ($c->pubsub->publish('atom')) {
 	  $msg .= ' and notified '. $c->endpoint('pubsub-hub') . ' about ' . $topic;
 	};
 

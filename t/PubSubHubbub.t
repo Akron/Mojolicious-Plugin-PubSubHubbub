@@ -438,18 +438,18 @@ $app->hook(
     };
   });
 
-ok(!$app->pubsub_subscribe, 'Subscription empty');
-ok(!$app->pubsub_subscribe(topic => 'http://sojolicio.us/'),
+ok(!$app->pubsub->subscribe, 'Subscription empty');
+ok(!$app->pubsub->subscribe(topic => 'http://sojolicio.us/'),
    'Subscription invalid');
-ok(!$app->pubsub_subscribe(hub => '/hub'),
+ok(!$app->pubsub->subscribe(hub => '/hub'),
    'Subscription invalid');
 
-ok(!$app->pubsub_subscribe(
+ok(!$app->pubsub->subscribe(
   topic => 'sojolicio.us',
   hub => '/hub'),
    'Subscription invalid');
 
-ok($app->pubsub_subscribe(
+ok($app->pubsub->subscribe(
   topic => 'http://sojolicio.us/blog.xml',
   hub   => '/hub'
 ), 'Subscribe');
@@ -457,14 +457,14 @@ ok($app->pubsub_subscribe(
 $request_count++;
 
 ok(
-  !$app->pubsub_subscribe(
+  !$app->pubsub->subscribe(
     topic => 'http://sojolicio.us/blog/unknown.xml',
     hub   => '/hub'
   ), 'Subscribe');
 
 $request_count++;
 
-ok($app->pubsub_unsubscribe(
+ok($app->pubsub->unsubscribe(
   topic => 'http://sojolicio.us/blog.xml',
   hub   => '/hub'
 ), 'Unsubscribe');
@@ -472,7 +472,7 @@ ok($app->pubsub_unsubscribe(
 $request_count++;
 
 ok(
-  !$app->pubsub_unsubscribe(
+  !$app->pubsub->unsubscribe(
     topic => 'http://sojolicio.us/blog/unknown.xml',
     hub   => '/hub'
   ), 'Unsubscribe');
@@ -544,9 +544,9 @@ $t->post_ok('/push' => form => { 'hub.mode' => 'unsubscribe',
 $request_count = 5;
 
 # Publish
-ok(!$app->pubsub_publish, 'Publication empty');
+ok(!$app->pubsub->publish, 'Publication empty');
 
-ok($app->pubsub_publish('http://sojolicio.us/blog.xml'),
+ok($app->pubsub->publish('http://sojolicio.us/blog.xml'),
    'Publication set');
 
 $request_count = 6;
@@ -554,7 +554,7 @@ $request_count = 6;
 $app->routes->route('/blog.xml')->name('blog_route');
 $app->routes->route('/comments.xml')->endpoint('comment_route');
 
-ok($app->pubsub_publish('blog_route','comment_route'),
+ok($app->pubsub->publish('blog_route','comment_route'),
    'Publication set');
 
 

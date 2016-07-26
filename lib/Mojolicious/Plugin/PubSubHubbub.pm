@@ -3,13 +3,14 @@ use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::UserAgent;
 use Mojo::DOM;
 use Mojo::ByteStream 'b';
-use Mojo::Util qw/secure_compare hmac_sha1_sum/;
+use Mojo::Util qw/secure_compare hmac_sha1_sum deprecated/;
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 # Todo:
 # - Make everything async (top priority)
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
+# - Test ->discover
 
 # Default lease seconds before automatic subscription refreshing
 has 'lease_seconds' => ( 9 * 24 * 60 * 60 );
@@ -101,6 +102,12 @@ sub register {
   # Add 'publish' helper
   $mojo->helper(
     pubsub_publish => sub {
+      deprecated 'pubsub_publish is deprecated in favor of pubsub->publish';
+      $plugin->publish( @_ );
+    });
+
+  $mojo->helper(
+    'pubsub.publish' => sub {
       $plugin->publish( @_ );
     });
 
@@ -108,6 +115,12 @@ sub register {
   foreach my $action (qw(subscribe unsubscribe)) {
     $mojo->helper(
       "pubsub_${action}" => sub {
+	deprecated "pubsub_${action} is deprecated in favor of pubsub->${action}";
+	$plugin->_change_subscription(shift, mode => $action, @_);
+      });
+
+    $mojo->helper(
+      "pubsub.${action}" => sub {
 	$plugin->_change_subscription(shift, mode => $action, @_);
       });
   };
@@ -115,6 +128,13 @@ sub register {
   # Add 'discovery' helper
   $mojo->helper(
     pubsub_discover => sub {
+      deprecated 'pubsub_discover is deprecated in favor of pubsub->discover';
+      $plugin->discover( @_ )
+    }
+  );
+
+  $mojo->helper(
+    'pubsub.discover' => sub {
       $plugin->discover( @_ )
     }
   );
@@ -944,25 +964,25 @@ Mojolicious::Plugin::PubSubHubbub - Publish and Subscribe with PubSubHubbub
 
   # In Controllers:
   # Publish feeds
-  $c->pubsub_publish(
+  $c->pubsub->publish(
     'https://sojolicio.us/blog.atom',
     'https://sojolicio.us/activity.atom'
   );
 
   # Subscribe to a feed
-  $c->pubsub_subscribe(
+  $c->pubsub->subscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us'
   );
 
   # Discover a resource
-  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+  my ($topic, $hub) = $c->pubsub->discover('http://sojolicio.us/');
   if ($topic && $hub) {
-    $c->pubsub_subscribe( topic => $topic, hub   => $hub );
+    $c->pubsub->subscribe( topic => $topic, hub   => $hub );
   };
 
   # Unsubscribe from a feed
-  $c->pubsub_unsubscribe(
+  $c->pubsub->unsubscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us'
   );
@@ -1061,19 +1081,19 @@ called C<pubsub-callback>.
 
 =head1 HELPERS
 
-=head2 pubsub_discover
+=head2 pubsub->discover
 
   # In Controllers
-  my ($topic, $hub) = $c->pubsub_discover('http://sojolicio.us/');
+  my ($topic, $hub) = $c->pubsub->discover('http://sojolicio.us/');
 
 Discover a topic feed and a hub based on a URI.
 The discovery heuristics may change without notification.
 
 
-=head2 pubsub_publish
+=head2 pubsub->publish
 
   # In Controllers
-  my $success = $c->pubsub_publish(
+  my $success = $c->pubsub->publish(
     'my_feed',                       # named route
     '/feed.atom',                    # relative paths
     'https://sojolicio.us/feed.atom' # absolute URIs
@@ -1084,10 +1104,10 @@ Supports endpoints, named routes, relative paths and absolute URIs.
 Returns a true value on success.
 
 
-=head2 pubsub_subscribe
+=head2 pubsub->subscribe
 
   # In Controllers
-  if ($c->pubsub_subscribe(
+  if ($c->pubsub->subscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us',
     lease_seconds => 123456
@@ -1112,10 +1132,10 @@ if an error occured. If called in an array context, the
 hub's response message body is returned additionally.
 
 
-=head2 pubsub_unsubscribe
+=head2 pubsub->unsubscribe
 
   # In Controllers
-  if ($c->pubsub_unsubscribe(
+  if ($c->pubsub->unsubscribe(
     topic => 'https://sojolicio.us/feed.atom',
     hub   => 'https://hub.sojolicio.us'
   )) {
