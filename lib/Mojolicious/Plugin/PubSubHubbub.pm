@@ -3,11 +3,12 @@ use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::UserAgent;
 use Mojo::DOM;
 use Mojo::ByteStream 'b';
-use Mojo::Util qw/secure_compare hmac_sha1_sum deprecated/;
+use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 
-our $VERSION = '0.16';
+our $VERSION = '0.17';
 
 # Todo:
+# - Prevent log injection
 # - Make everything async (top priority)
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
 # - Test ->discover
@@ -88,22 +89,15 @@ sub register {
 
       # Add 'callback' route
       $route->to(
-	cb => sub {
-	  my $c = shift;
+        cb => sub {
+          my $c = shift;
 
-	  # Hook on verification
-	  return $plugin->verify($c) if $c->param('hub.mode');
+          # Hook on verification
+          return $plugin->verify($c) if $c->param('hub.mode');
 
-	  # Hook on callback
-	  return $plugin->callback($c);
-	});
-    });
-
-  # Add 'publish' helper
-  $mojo->helper(
-    pubsub_publish => sub {
-      deprecated 'pubsub_publish is deprecated in favor of pubsub->publish';
-      $plugin->publish( @_ );
+          # Hook on callback
+          return $plugin->callback($c);
+        });
     });
 
   $mojo->helper(
@@ -114,24 +108,10 @@ sub register {
   # Add 'subscribe' and 'unsubscribe' helper
   foreach my $action (qw(subscribe unsubscribe)) {
     $mojo->helper(
-      "pubsub_${action}" => sub {
-	deprecated "pubsub_${action} is deprecated in favor of pubsub->${action}";
-	$plugin->_change_subscription(shift, mode => $action, @_);
-      });
-
-    $mojo->helper(
       "pubsub.${action}" => sub {
-	$plugin->_change_subscription(shift, mode => $action, @_);
+        $plugin->_change_subscription(shift, mode => $action, @_);
       });
   };
-
-  # Add 'discovery' helper
-  $mojo->helper(
-    pubsub_discover => sub {
-      deprecated 'pubsub_discover is deprecated in favor of pubsub->discover';
-      $plugin->discover( @_ )
-    }
-  );
 
   $mojo->helper(
     'pubsub.discover' => sub {
@@ -180,7 +160,7 @@ sub publish {
   };
 
   # is 2xx, incl. 204 aka successful
-  return 1 if $res->is_status_class(200);
+  return 1 if $res->is_success;
 
   # Not successful
   return;
@@ -201,10 +181,10 @@ sub verify {
 
     my %param;
     foreach (qw/mode
-		topic
-		verify
-		lease_seconds
-		verify_token/) {
+                topic
+                verify
+                lease_seconds
+                verify_token/) {
       $param{$_} = $c->param("hub.$_") if $c->param("hub.$_");
     };
 
@@ -253,20 +233,20 @@ sub _discover_header_links {
 
       # Set type
       if ($check =~ /type\s*=\s*"([^"]+?)"/omi) {
-	my $type = $1;
-	next if $type && $type !~ $FEED_TYPE_RE;
-	$link{type} = $type;
-	$link{short_type} = $1;
+        my $type = $1;
+        next if $type && $type !~ $FEED_TYPE_RE;
+        $link{type} = $type;
+        $link{short_type} = $1;
       };
 
       # Set title
       if ($check =~ /title\s*=\s*"([^"]+?)"/omi) {
-	$link{title} = $1;
+        $link{title} = $1;
       };
 
       # Check file ending for short type
       unless ($link{short_type}) {
-	$link{short_type} = $1 if $link{href} =~ $FEED_ENDING_RE;
+        $link{short_type} = $1 if $link{href} =~ $FEED_ENDING_RE;
       };
 
       # Push found link
@@ -306,13 +286,13 @@ sub _discover_dom_links {
       # Short type yet not known
       unless ($short_type) {
 
-	# Set short type by file ending
-	$link{short_type} = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
+        # Set short type by file ending
+        $link{short_type} = $1 if $href =~ m/\.(r(?:ss|df)|atom)$/i;
       }
 
       # Set short type
       else {
-	$link{short_type} = $short_type;
+        $link{short_type} = $short_type;
       };
 
       # Set title and type
@@ -343,7 +323,7 @@ sub _discover_sort_links {
     foreach my $link (@{$links->{self}}) {
       $topic ||= $link;
       if ($link->{short_type} && !$topic->{short_type}) {
-	$topic = $link;
+        $topic = $link;
       };
     };
   };
@@ -355,7 +335,7 @@ sub _discover_sort_links {
     foreach my $link (@{$links->{hub}}) {
       $hub ||= $link;
       if ($link->{short_type} && !$hub->{short_type}) {
-	$hub = $link;
+        $hub = $link;
       };
     };
   };
@@ -375,26 +355,26 @@ sub _discover_sort_links {
 
       # No title given
       unless ($link->{title}) {
-	$link->{pref} = 2;
+        $link->{pref} = 2;
       }
 
       # Guess which feed is best based on the title
       elsif ($link->{title} =~ /(?i:feed|stream)/i) {
 
-	# This is more likely a comment feed
-	if ($link->{title} =~ /[ck]omment/i) {
-	  $link->{pref} = 1;
-	}
+        # This is more likely a comment feed
+        if ($link->{title} =~ /[ck]omment/i) {
+          $link->{pref} = 1;
+        }
 
-	# This may be the correct feed
-	else {
-	  $link->{pref} = 3;
-	};
+        # This may be the correct feed
+        else {
+          $link->{pref} = 3;
+        };
       }
 
       # Don't know ...
       else {
-	$link->{pref} = 2;
+        $link->{pref} = 2;
       };
     };
 
@@ -403,28 +383,28 @@ sub _discover_sort_links {
 
       # Sort by title
       if ($a->{pref} < $b->{pref}) {
-	return 1;
+        return 1;
       }
       elsif ($a->{pref} > $b->{pref}) {
-	return -1;
+        return -1;
       }
       # Sort by type
       elsif ($a->{short_type} gt $b->{short_type}) {
-	return 1;
+        return 1;
       }
       elsif ($a->{short_type} lt $b->{short_type}) {
-	return -1;
+        return -1;
       }
       # Sort by length
       elsif (length($a->{href}) > length($b->{href})) {
-	return 1;
+        return 1;
       }
       elsif (length($a->{href}) <= length($b->{href})) {
-	return -1;
+        return -1;
       }
       # Equal
       else {
-	return -1;
+        return -1;
       };
     } @$alternate);
   };
@@ -481,7 +461,7 @@ sub discover {
 
       # Check sorted dom links
       ($topic, $hub) = _discover_sort_links(
-	_discover_dom_links($dom)
+        _discover_dom_links($dom)
       );
     };
 
@@ -490,8 +470,8 @@ sub discover {
 
       # Initialize new UserAgent
       $ua = Mojo::UserAgent->new(
-	max_redirects => 3,
-	name => $UA_NAME
+        max_redirects => 3,
+        name => $UA_NAME
       );
 
       # Set new base base
@@ -503,30 +483,30 @@ sub discover {
       # Request was successful
       if ($tx->success) {
 
-	# Change nbase after possible redirects
-	$nbase = $tx->req->url;
+        # Change nbase after possible redirects
+        $nbase = $tx->req->url;
 
-	# Get response
-	$res = $tx->res;
+        # Get response
+        $res = $tx->res;
 
-	# Check sorted header links
-	($ntopic, $hub) = _discover_sort_links(
-	  _discover_header_links($res->headers)
-	);
+        # Check sorted header links
+        ($ntopic, $hub) = _discover_sort_links(
+          _discover_header_links($res->headers)
+        );
 
 
-	unless ($ntopic && $hub) {
+        unless ($ntopic && $hub) {
 
-	  # Check sorted dom links
-	  ($ntopic, $hub) = _discover_sort_links(
-	    _discover_dom_links($res->dom)
-	  );
-	};
+          # Check sorted dom links
+          ($ntopic, $hub) = _discover_sort_links(
+            _discover_dom_links($res->dom)
+          );
+        };
       }
 
       # Reset nbase as no connection occurred
       else {
-	$nbase = undef;
+        $nbase = undef;
       };
     };
   };
@@ -565,8 +545,8 @@ sub _change_subscription {
 
   # No topic or hub url given
   unless (exists $param{topic} &&
-	    $param{topic} =~ m{^https?://}i &&
-	      exists $param{hub}) {
+            $param{topic} =~ m{^https?://}i &&
+            exists $param{hub}) {
     $log->warn('You have to specify a topic and a hub');
     return;
   };
@@ -575,7 +555,7 @@ sub _change_subscription {
 
   # delete lease seconds if no integer
   if (exists $param{lease_seconds} &&
-	($mode eq 'unsubscribe' || $param{lease_seconds} !~ /^\d+$/)
+        ($mode eq 'unsubscribe' || $param{lease_seconds} !~ /^\d+$/)
       ) {
     delete $param{lease_seconds};
   };
@@ -592,8 +572,8 @@ sub _change_subscription {
   # Use verify token
   $post{verify_token} =
     exists $param{verify_token} ?
-      $param{verify_token} :
-	($param{verify_token} =
+    $param{verify_token} :
+    ($param{verify_token} =
 	   $c->random_string('pubsub_challenge'));
 
   $post{verify} = "${_}sync" foreach ('a', '');
@@ -632,7 +612,7 @@ sub _change_subscription {
     ));
 
   # is 2xx, incl. 204 aka successful and 202 aka accepted
-  my $success = $res->is_status_class(200) ? 1 : 0;
+  my $success = $res->is_success ? 1 : 0;
 
   return ($success, $res->{body}) if wantarray;
   return $success;
@@ -697,7 +677,7 @@ sub callback {
     unless ( _check_signature( $c, $secret )) {
 
       $log->debug(
-	'Unable to verify secret for ' . join('; ', @$topics)
+        'Unable to verify secret for ' . join('; ', @$topics)
       );
 
       # return _render_success( $c => $x_hub_on_behalf_of );
@@ -741,7 +721,7 @@ sub _find_topics {
     # One feed or entry
     my $link = $dom->at(
       'feed > link[rel="self"][href],' .
-	'channel > link[rel="self"][href]'
+        'channel > link[rel="self"][href]'
       );
 
     my $self_href;
@@ -796,20 +776,20 @@ sub _add_topics {
 
       # Sources are found
       if (my $sources = $entry->find('source')) {
-	foreach my $s (@$sources) {
-	  $source = $s and last if $s->namespace eq $atom_ns;
-	};
+        foreach my $s (@$sources) {
+          $source = $s and last if $s->namespace eq $atom_ns;
+        };
       };
 
       # No source found
       unless ($source) {
-	$source = $entry->append_content(qq{<source xmlns="$atom_ns" />})
-	  ->at(qq{source[xmlns="$atom_ns"]});
+        $source = $entry->append_content(qq{<source xmlns="$atom_ns" />})
+          ->at(qq{source[xmlns="$atom_ns"]});
       }
 
       # Link already there
       elsif ($source->at('link[rel="self"][href]')) {
-	return $dom;
+        return $dom;
       };
 
       # Add link
@@ -841,12 +821,12 @@ sub _filter_topics {
 
       # entry is not allowed
       unless (exists $allowed{$href}) {
-	$l->parent->parent->replace('');
+        $l->parent->parent->replace('');
       }
 
       # Entry is fine and found
       else {
-	$topics{$href} = 1;
+        $topics{$href} = 1;
       };
     });
 
@@ -884,7 +864,7 @@ sub _render_success {
 
   # Set X-Hub-On-Behalf-Of header
   if ($x_hub_on_behalf_of &&
-      $x_hub_on_behalf_of =~ s/^\s*(\d+)\s*$/$1/) {
+        $x_hub_on_behalf_of =~ s/^\s*(\d+)\s*$/$1/) {
 
     # Set X-Hub-On-Behalf-Of header
     $c->res->headers->header(
@@ -1367,7 +1347,7 @@ This plugin is part of the L<Sojolicious|http://sojolicio.us> project.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2016, L<Nils Diewald|http://nils-diewald.de/>.
+Copyright (C) 2011-2017, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the terms of the Artistic License version 2.0.
