@@ -769,7 +769,6 @@ sub _find_topics {
 sub _add_topics {
   state $atom_ns = 'http://www.w3.org/2005/Atom';
 
-
   my ($type, $dom, $self_href) = @_;
 
   my $link = qq{<link rel="self" href="$self_href" />};
