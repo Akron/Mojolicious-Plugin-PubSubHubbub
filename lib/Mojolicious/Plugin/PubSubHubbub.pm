@@ -8,6 +8,7 @@ use Mojo::Util qw/secure_compare hmac_sha1_sum/;
 our $VERSION = '0.18';
 
 # Todo:
+# - Be compliant with https://www.w3.org/TR/websub/
 # - Prevent log injection
 # - Make everything async (top priority)
 # - Maybe allow something like ->feed_to_json (look at superfeedr)
