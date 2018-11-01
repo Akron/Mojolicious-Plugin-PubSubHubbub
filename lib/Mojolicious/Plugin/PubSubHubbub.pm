@@ -158,7 +158,7 @@ sub publish {
   # Post to hub
   my $tx = $ua->post( $plugin->hub => form => \%post );
 
-  my $res = $tx->success;
+  my $res = $tx->result;
 
   # No response
   unless ($res) {
@@ -448,7 +448,7 @@ sub discover {
   # Retrieve resource
   my $tx = $ua->get($base);
 
-  if ($tx->success) {
+  unless ($tx->error) {
 
     # Change base after possible redirects
     $base = $tx->req->url;
@@ -488,7 +488,7 @@ sub discover {
       $tx = $ua->get($nbase);
 
       # Request was successful
-      if ($tx->success) {
+      unless ($tx->error) {
 
         # Change nbase after possible redirects
         $nbase = $tx->req->url;
@@ -603,7 +603,7 @@ sub _change_subscription {
   # Send subscription change to hub
   my $tx = $ua->post($param{hub} => form => \%post);
 
-  my $res = $tx->success;
+  my $res = $tx->result;
 
   # No response
   unless ($res) {
