@@ -1348,8 +1348,6 @@ L<Mojolicious::Plugin::Util::RandomString>.
 
   https://github.com/Akron/Mojolicious-Plugin-PubSubHubbub
 
-This plugin is part of the L<Sojolicious|http://sojolicious.example> project.
-
 
 =head1 COPYRIGHT AND LICENSE
 
